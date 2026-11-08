@@ -1,0 +1,77 @@
+name: Sync to GitHub Projects
+description: Add eligible issues and pull requests to GitHub Projects (v2), one way only.
+inputs:
+  github-token:
+    description: Token with project write and source issue/pull request read permissions.
+    required: true
+  project-owner:
+    description: User or organization login owning the project.
+    required: true
+  project-number:
+    description: Project number from its URL (not a project node ID).
+    required: true
+  issue-number:
+    description: Issue or pull request number in the calling repository; defaults to the event item.
+    default: ''
+  allowed-repositories:
+    description: Comma or newline separated owner/repo allowlist; defaults to the calling repository.
+    default: ''
+  allowed-types:
+    description: Comma or newline separated item types (issue, pull_request).
+    default: issue,pull_request
+  allowed-states:
+    description: Comma or newline separated item states (open, closed).
+    default: open
+  required-labels:
+    description: Comma or newline separated labels that must ALL be present.
+    default: ''
+  excluded-labels:
+    description: Comma or newline separated labels; ANY match prevents adding the item.
+    default: ''
+  allowed-authors:
+    description: Comma or newline separated author logins; empty allows any author.
+    default: ''
+  exclude-drafts:
+    description: Exclude draft pull requests (true or false).
+    default: 'true'
+  exclude-bots:
+    description: Exclude items authored by Bot accounts (true or false).
+    default: 'true'
+  dry-run:
+    description: Check eligibility and project access without adding an item (true or false).
+    default: 'false'
+outputs:
+  result:
+    description: synced, skipped, or dry-run. synced also covers existing items.
+    value: ${{ steps.sync.outputs.sync-result }}
+  item-id:
+    description: Project item node ID when synced; otherwise empty.
+    value: ${{ steps.sync.outputs.item-id }}
+  reason:
+    description: Explanation of the result.
+    value: ${{ steps.sync.outputs.reason }}
+runs:
+  using: composite
+  steps:
+    - name: Check eligibility and sync
+      id: sync
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      env:
+        PROJECT_SYNC_ACTION_PATH: ${{ github.action_path }}
+        PROJECT_SYNC_OWNER: ${{ inputs.project-owner }}
+        PROJECT_SYNC_NUMBER: ${{ inputs.project-number }}
+        PROJECT_SYNC_ISSUE_NUMBER: ${{ inputs.issue-number }}
+        PROJECT_SYNC_REPOSITORIES: ${{ inputs.allowed-repositories }}
+        PROJECT_SYNC_TYPES: ${{ inputs.allowed-types }}
+        PROJECT_SYNC_STATES: ${{ inputs.allowed-states }}
+        PROJECT_SYNC_REQUIRED_LABELS: ${{ inputs.required-labels }}
+        PROJECT_SYNC_EXCLUDED_LABELS: ${{ inputs.excluded-labels }}
+        PROJECT_SYNC_AUTHORS: ${{ inputs.allowed-authors }}
+        PROJECT_SYNC_EXCLUDE_DRAFTS: ${{ inputs.exclude-drafts }}
+        PROJECT_SYNC_EXCLUDE_BOTS: ${{ inputs.exclude-bots }}
+        PROJECT_SYNC_DRY_RUN: ${{ inputs.dry-run }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const sync = require(`${process.env.PROJECT_SYNC_ACTION_PATH}/src/sync.cjs`);
+          await sync({ github, context, core });

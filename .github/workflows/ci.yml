@@ -51,7 +51,7 @@ jobs:
           total=$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')
           echo "### Coverage: ${total}%" >> "$GITHUB_STEP_SUMMARY"
           awk -v t="$total" 'BEGIN { if (t < 85) { print "Coverage " t "% is below 85%"; exit 1 } }'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Linux'
         with:
           name: coverage

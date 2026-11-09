@@ -1,0 +1,11 @@
+$ exit 1
+--- stdout
+--- stderr
+✗ .github/pj-synker.yml:3:3 "project.ownr" isn't a setting. Did you mean "project.owner"?
+
+    2 | project:
+    3 |   ownr: acme
+      |   ^
+
+  Fix the file, then check it:
+    gh pj-synker config check

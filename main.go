@@ -46,6 +46,7 @@ func run() int {
 			}
 			return r.Owner + "/" + r.Name, nil
 		},
+		Getwd:   os.Getwd,
 		Version: resolveVersion(),
 	}
 	return cli.Run(ctx, os.Args[1:], streams, deps)

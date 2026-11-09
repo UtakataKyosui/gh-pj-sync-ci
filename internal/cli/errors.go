@@ -33,6 +33,7 @@ type Recovery struct {
 	Instruction string
 	Argv        []string
 	When        string // JSON only: the condition for running it
+	URL         string // a page to open instead of a command
 }
 
 type detail struct{ label, value string }
@@ -44,6 +45,7 @@ type Error struct {
 	Reason             string // stable snake_case code
 	Message            string // headline, no glyph
 	Details            []detail
+	Frame              []string // code frame for a config file location
 	Recovery           []Recovery
 	Data               map[string]any
 	UserActionRequired bool
@@ -118,11 +120,22 @@ func (e *Error) renderHuman(p printer) {
 	if e.RequestID != "" {
 		p.row("Request ID", e.RequestID)
 	}
+	if len(e.Frame) > 0 {
+		p.blank()
+		for _, l := range e.Frame {
+			p.line("    " + l)
+		}
+	}
 	for i, r := range e.Recovery {
 		if i == 2 {
 			break
 		}
 		p.blank()
+		if r.URL != "" {
+			p.text(r.Instruction + ":")
+			p.line("    " + r.URL)
+			continue
+		}
 		if len(r.Argv) == 0 {
 			p.text(r.Instruction)
 			continue

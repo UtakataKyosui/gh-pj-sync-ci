@@ -1,0 +1,14 @@
+$ exit 0
+--- stdout
+✓ Valid           .github/pj-synker.yml
+  Owner           acme
+  Project         1
+  Repositories    current repository (default)
+  Types           issue, pull-request (default)
+  States          open (default)
+  Labels          triaged
+  Exclude labels  blocked
+  Authors         any (default)
+  Drafts          Draft pull requests excluded (default)
+  Bots            Bot items excluded (default)
+--- stderr

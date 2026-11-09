@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/UtakataKyosui/gh-pj-synker/main/docs/pj-synker.schema.json",
+  "title": "gh pj-synker config",
+  "description": "Config file for gh pj-synker. Options given on the command line override it.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "File format version.",
+      "const": 1
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "description": "User or organization that owns the project (--owner).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+        },
+        "number": {
+          "description": "Project number from its URL (--project).",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "repositories": {
+      "description": "Repositories as OWNER/REPO (--repo). Defaults to the current repository.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$" }
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "types": {
+          "description": "Item types to include (--type).",
+          "type": "array",
+          "items": { "enum": ["issue", "pull-request"] }
+        },
+        "states": {
+          "description": "Item states to include (--state).",
+          "type": "array",
+          "items": { "enum": ["open", "closed"] }
+        },
+        "labels": {
+          "description": "Only add items that have all of these labels (--label).",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exclude-labels": {
+          "description": "Skip items that have any of these labels (--exclude-label).",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "authors": {
+          "description": "Only add items by these authors (--author). An empty list allows any author.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "drafts": {
+          "description": "Include draft pull requests (--drafts).",
+          "type": "boolean"
+        },
+        "bots": {
+          "description": "Include items by bot accounts (--bots).",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -15,10 +15,36 @@ gh extension install UtakataKyosui/gh-pj-synker
 gh auth refresh --scopes project
 ```
 
+## 設定ファイル
+
+Projectの所有者と番号、既定のフィルタは、リポジトリにコミットする設定ファイル`.github/pj-synker.yml`に書けます。
+
+```yaml
+# .github/pj-synker.yml
+version: 1
+project:
+  owner: acme
+  number: 1
+filters:
+  labels: [triaged]
+  exclude-labels: [blocked]
+```
+
+```bash
+gh pj-synker config check   # 検証し、最終的に使われる値と既定値を表示する
+gh pj-synker add 42         # --owner と --project は設定ファイルから補われる
+```
+
+- **優先順位**: コマンドラインのオプションは、常に設定ファイルより優先します。リストは置き換え、真偽値は`--no-drafts`のように上書きします。
+- **壊れたファイル**: 未知のキー、型の誤り、YAMLの構文エラーは、行と列の位置付きのエラーになります。ないものとして扱って既定値で続行することはありません。
+- **補完**: エディタの補完用に[JSON Schema](docs/pj-synker.schema.json)を用意しています。
+
+探索順序やキーの一覧は[docs/config.md](docs/config.md)を参照してください。
+
 ## 使い方
 
 ```bash
-# 1件を追加
+# 1件を追加（設定ファイルがなければ --owner と --project を指定）
 gh pj-synker add 42 --owner acme --project 1
 
 # 条件に合う項目をまとめて確認（何も変更しない）
@@ -48,8 +74,10 @@ gh pj-synker add --all --owner acme --project 1 --label triaged --exclude-label 
 | オプション | 既定値 | 内容 |
 | --- | --- | --- |
 | `[<number>]...` | | 追加するIssue／PR番号。`--all`と同時には使えない |
-| `--owner <LOGIN>` | 必須 | Project所有者のUser／Organization |
-| `--project <NUMBER>` | 必須 | ProjectのURL末尾の番号 |
+| `--owner <LOGIN>` | 設定ファイル | Project所有者のUser／Organization（どちらかで必須） |
+| `--project <NUMBER>` | 設定ファイル | ProjectのURL末尾の番号（どちらかで必須） |
+| `--config <FILE>` | 自動探索 | 読む設定ファイル |
+| `--no-config` | | 設定ファイルを読まない |
 | `-R, --repo <REPOS>` | 現在のリポジトリ | `OWNER/REPO`。`--all`ではカンマ区切りで複数指定可 |
 | `--all` | | リポジトリ内の全項目を検査する |
 | `--type <TYPES>` | `issue,pull-request` | 対象の種類 |
@@ -67,17 +95,19 @@ gh pj-synker add --all --owner acme --project 1 --label triaged --exclude-label 
 
 リストはカンマ区切りです（`--label triaged,accepted`）。大文字小文字は区別しません。オプションを繰り返すと追記されます。
 
-リポジトリは`--repo`、`GH_REPO`、現在のgitチェックアウト、`GITHUB_REPOSITORY`の順で決まります。`--repo`以外から決まった場合は、出力の`Source`行に出所を表示します。値が不正な場合は、別の候補にフォールバックせずに失敗します。
+リポジトリは`--repo`、`GH_REPO`、設定ファイルの`repositories`、現在のgitチェックアウト、`GITHUB_REPOSITORY`の順で決まります。`--repo`以外から決まった場合は、出力の`Source`行に出所を表示します。値が不正な場合は、別の候補にフォールバックせずに失敗します。
 
 ## CIで使う
 
-[`examples/sync.yml`](examples/sync.yml)をワークフローとして配置します。イベントの項目番号はワークフロー側で明示的に渡します。CLIはイベントペイロードを推測して読みません。
+[`examples/sync.yml`](examples/sync.yml)をワークフローとして、[`examples/pj-synker.yml`](examples/pj-synker.yml)を`.github/pj-synker.yml`として配置します。
+
+ワークフローは、デフォルトブランチの設定ファイルだけをsparse checkoutします。イベントの項目番号はワークフロー側で明示的に渡します。CLIはイベントペイロードを推測して読みません。
 
 ```yaml
 - env:
     GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
     NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-  run: gh pj-synker add "$NUMBER" --owner your-organization --project 1 --label triaged
+  run: gh pj-synker add "$NUMBER"
 ```
 
 CI（`CI`環境変数あり）では、自動的に非対話モードになります。stderrは色やグリフを使わない文章形式になり、stdoutには追加・既存の項目IDだけが1行ずつ出ます。結果を機械的に扱う場合は`--json`を使ってください。
@@ -96,6 +126,7 @@ CI（`CI`環境変数あり）では、自動的に非対話モードになり�
 | --- | --- |
 | `0` | 完了。追加なし（条件外・既存）、空の結果、dry-run、ヘルプを含む |
 | `1` | 操作の失敗（認証、権限、見つからない、APIエラー）、または一部の項目の失敗 |
+| `1` | 設定ファイルが壊れている（`invalid_config`。APIを呼ぶ前に検出） |
 | `2` | 使い方の誤り、または入力・確認の不足（ネットワークに触れる前に検出） |
 | `130` | Ctrl+C、または確認プロンプトでの拒否 |
 
@@ -112,6 +143,7 @@ CI（`CI`環境変数あり）では、自動的に非対話モードになり�
 ```json
 {
   "project": { "owner": "acme", "number": 1, "id": "PVT_...", "title": "Roadmap", "url": "..." },
+  "config": ".github/pj-synker.yml",
   "dryRun": false,
   "results": [
     { "repository": "acme/web", "number": 5, "type": "issue", "title": "...", "url": "...",
@@ -148,6 +180,7 @@ CLIの振る舞いは[Vercel CLI design](https://vercel.com/design/cli)のガイ
 - **終了コード**: 結果どおりに返します。
 - **ヘルプ**: 認証やネットワークを使わずに表示します。
 - **入力の扱い**: 対象を推測せず、不正な値でフォールバックしません。
+- **設定の優先順位**: オプション、環境変数、設定ファイル、既定値の順です。壊れた設定ファイルは位置付きのエラーにします。
 - **同意**: 推測で決まる一括追加（`--all`）は、確認を取ってから実行します。
 - **表示モード**: TTY、パイプ、CI、`NO_COLOR`、`FORCE_COLOR`に応じて表示を切り替えます。
 
@@ -162,7 +195,7 @@ make install  # ビルドしてローカルのghに拡張機能として入れ�
 
 テストは次の3層です。
 
-- **単体テスト**: 判定ロジック、パーサー、モード解決、APIエラーの対応表を検証します。
+- **単体テスト**: 判定ロジック、パーサー、設定ファイルの検証と探索、モード解決、APIエラーの対応表を検証します。
 - **goldenテスト**: 人が読む出力（`internal/cli/testdata/*.golden`）を固定します。
 - **E2Eテスト**: ビルドしたバイナリを偽のGitHub APIに対して実行し、終了コード、ストリーム、冪等性、SIGINTを検証します。
 

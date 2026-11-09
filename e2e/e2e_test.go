@@ -218,3 +218,52 @@ func TestInterruptExits130(t *testing.T) {
 		t.Fatalf("stderr=%s", se.String())
 	}
 }
+
+func TestConfigFile(t *testing.T) {
+	gh, srv := newFakeGitHub(t)
+	gh.setIssue(fakeIssue{Number: 1, Title: "One", State: "open", Author: "a", Labels: []string{"triaged"}})
+	gh.setIssue(fakeIssue{Number: 2, Title: "Two", State: "open", Author: "a"})
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, ".github", "pj-synker.yml")
+	write := func(content string) {
+		if err := os.WriteFile(cfg, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("project:\n  owner: acme\n  number: 1\nrepositories: [acme/web]\nfilters:\n  labels: [triaged]\n")
+
+	// The config file supplies --owner, --project and the filters.
+	cmd := command(srv.URL, "add", "--all", "--yes")
+	cmd.Dir = filepath.Join(dir, ".github") // found from a subdirectory too
+	r := runCmd(t, cmd)
+	if r.code != 0 || r.stdout != "PVTI_I_1\n" || gh.addCount() != 1 {
+		t.Fatalf("%+v", r)
+	}
+
+	cmd = command("", "config", "check", "--json")
+	cmd.Dir = dir
+	r = runCmd(t, cmd)
+	if r.code != 0 || !strings.Contains(r.stdout, `"project.owner":"acme"`) {
+		t.Fatalf("%+v", r)
+	}
+
+	// A broken file fails with its location, before any request.
+	write("project:\n  owner: acme\n  numbr: 1\n")
+	before := len(gh.authHeaders())
+	cmd = command(srv.URL, "add", "1", "--owner", "acme", "--project", "1")
+	cmd.Dir = dir
+	r = runCmd(t, cmd)
+	if r.code != 1 || !strings.Contains(r.stderr, "pj-synker.yml:3:3 \"project.numbr\" isn't a setting. Did you mean \"project.number\"?") {
+		t.Fatalf("%+v", r)
+	}
+	if len(gh.authHeaders()) != before {
+		t.Fatal("a request was made with a broken config file")
+	}
+}

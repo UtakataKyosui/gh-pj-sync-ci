@@ -1,0 +1,11 @@
+# Copy to .github/pj-synker.yml in the repository whose items you want to sync.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/UtakataKyosui/gh-pj-synker/main/docs/pj-synker.schema.json
+version: 1
+
+project:
+  owner: your-organization
+  number: 1
+
+filters:
+  labels: [triaged]
+  exclude-labels: [blocked]

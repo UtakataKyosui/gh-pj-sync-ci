@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/UtakataKyosui/gh-pj-synker/internal/config"
 	"github.com/UtakataKyosui/gh-pj-synker/internal/filter"
 	"github.com/UtakataKyosui/gh-pj-synker/internal/ghapi"
+	"github.com/UtakataKyosui/gh-pj-synker/internal/ident"
 	"github.com/UtakataKyosui/gh-pj-synker/internal/syncer"
 )
 
@@ -26,55 +27,58 @@ var addCommand = command{
 		{name: "all", kind: boolOpt, desc: "Check every item in the repositories"},
 		{name: "author", kind: listOpt, hint: "<LOGINS>", desc: "Only add items by these authors", def: "any"},
 		{name: "bots", kind: boolOpt, desc: "Include items by bot accounts", def: "false"},
+		configOption,
 		{name: "drafts", kind: boolOpt, desc: "Include draft pull requests", def: "false"},
 		{name: "dry-run", kind: boolOpt, desc: "Show what would be added, without adding"},
 		{name: "exclude-label", kind: listOpt, hint: "<LABELS>", desc: "Skip items that have any of these labels"},
 		{name: "json", kind: boolOpt, desc: "Print the result as JSON on stdout"},
 		{name: "label", kind: listOpt, hint: "<LABELS>", desc: "Only add items that have all of these labels"},
-		{name: "owner", kind: stringOpt, hint: "<LOGIN>", desc: "Project owner: user or organization (required)"},
-		{name: "project", kind: intOpt, hint: "<NUMBER>", desc: "Project number from its URL (required)"},
+		{name: "no-config", kind: boolOpt, desc: "Don't read a config file"},
+		{name: "owner", kind: stringOpt, hint: "<LOGIN>", desc: "Project owner: user or organization"},
+		{name: "project", kind: intOpt, hint: "<NUMBER>", desc: "Project number from its URL"},
 		{name: "repo", short: "R", kind: listOpt, hint: "<REPOS>", desc: "OWNER/REPO list", def: "current repository"},
 		{name: "state", kind: listOpt, hint: "<STATES>", desc: "Item states: open, closed", def: "open"},
 		{name: "type", kind: listOpt, hint: "<TYPES>", desc: "Item types: issue, pull-request", def: "both"},
 		{name: "yes", short: "y", kind: boolOpt, desc: "Confirm adding the items found with --all"},
 	},
 	examples: []example{
-		{"Add an issue to a project", []string{"gh", "pj-synker", "add", "42", "--owner", "acme", "--project", "1"}},
-		{"Preview which triaged items would be added", []string{"gh", "pj-synker", "add", "--all", "--owner", "acme", "--project", "1", "--label", "triaged", "--dry-run"}},
-		{"Add every eligible item in CI and read the result", []string{"gh", "pj-synker", "add", "--all", "--owner", "acme", "--project", "1", "--yes", "--json"}},
+		{"Add an issue to the project set in the config file", []string{"gh", "pj-synker", "add", "42"}},
+		{"Add an issue to a project without a config file", []string{"gh", "pj-synker", "add", "42", "--owner", "acme", "--project", "1"}},
+		{"Preview which triaged items would be added", []string{"gh", "pj-synker", "add", "--all", "--label", "triaged", "--dry-run"}},
+		{"Add every eligible item in CI and read the result", []string{"gh", "pj-synker", "add", "--all", "--yes", "--json"}},
 	},
 	notes: []string{
+		"--owner and --project are required unless the config file sets them.",
+		"Options override the config file. See gh pj-synker config check --help.",
 		"Lists are comma-separated, such as --label triaged,accepted.",
 		"Matching ignores case. An excluded label wins over a required label.",
 		"Items are only added. Nothing is removed, archived, or written back.",
 		"Items already in the project are reported as unchanged, never duplicated.",
-		"The repository comes from --repo, GH_REPO, the current git checkout,",
-		"then GITHUB_REPOSITORY.",
+		"The repository comes from --repo, GH_REPO, the config file, the current",
+		"git checkout, then GITHUB_REPOSITORY.",
 		"Authentication uses gh auth login, or GH_TOKEN in CI.",
 		"The token needs the project scope.",
 	},
 }
 
 type addOptions struct {
-	owner       string
-	project     int
-	repos       []string
-	repoSource  string // "" when the repositories came from --repo
-	numbers     []int
-	all         bool
-	cfg         filter.Config
-	labelsRaw   []string
-	excludedRaw []string
-	authorsRaw  []string
-	typesRaw    []string
-	statesRaw   []string
-	dryRun      bool
-	yes         bool
-	json        bool
-	g           globalOptions
+	p          parsed // what was given on the command line
+	conf       *loadedConfig
+	owner      string
+	project    int
+	repos      []string
+	repoSource string // "" when the repositories came from --repo
+	numbers    []int
+	all        bool
+	cfg        filter.Config
+	dryRun     bool
+	yes        bool
+	json       bool
+	g          globalOptions
 }
 
-// argv reconstructs the command with canonical long options, for recovery and next steps.
+// argv reconstructs the command for recovery and next steps. It repeats only what was
+// given on the command line, with canonical long options; the config file fills in the rest.
 func (o addOptions) argv(dryRun, yes bool) []string {
 	a := []string{"gh", "pj-synker", "add"}
 	for _, n := range o.numbers {
@@ -83,23 +87,24 @@ func (o addOptions) argv(dryRun, yes bool) []string {
 	if o.all {
 		a = append(a, "--all")
 	}
-	a = append(a, "--owner", o.owner, "--project", strconv.Itoa(o.project))
-	if o.repoSource == "" {
-		a = append(a, "--repo", strings.Join(o.repos, ","))
-	}
-	for _, f := range []struct {
-		name string
-		vals []string
-	}{{"type", o.typesRaw}, {"state", o.statesRaw}, {"label", o.labelsRaw}, {"exclude-label", o.excludedRaw}, {"author", o.authorsRaw}} {
-		if len(f.vals) > 0 {
-			a = append(a, "--"+f.name, strings.Join(f.vals, ","))
+	for _, name := range []string{"owner", "project", "config"} {
+		if o.p.has(name) {
+			a = append(a, "--"+name, o.p.strs[name])
 		}
 	}
-	if o.cfg.IncludeDrafts {
-		a = append(a, "--drafts")
+	for _, name := range []string{"repo", "type", "state", "label", "exclude-label", "author"} {
+		if o.p.has(name) {
+			a = append(a, "--"+name, strings.Join(filter.SplitList(o.p.lists[name]...), ","))
+		}
 	}
-	if o.cfg.IncludeBots {
-		a = append(a, "--bots")
+	for _, name := range []string{"no-config", "drafts", "bots"} {
+		if o.p.has(name) {
+			if o.p.bools[name] {
+				a = append(a, "--"+name)
+			} else if name != "no-config" {
+				a = append(a, "--no-"+name)
+			}
+		}
 	}
 	if dryRun {
 		a = append(a, "--dry-run")
@@ -113,38 +118,61 @@ func (o addOptions) argv(dryRun, yes bool) []string {
 	return a
 }
 
-var (
-	loginRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
-	repoRe  = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
-)
-
 type inputIssue struct {
 	field, reason, message string
 	missing                bool
 }
 
-func parseAddOptions(args []string, getenv func(string) string, currentRepo func() (string, error)) (addOptions, *Error) {
+// listSetting is a list option, else the config value, else the default. An option that
+// is given replaces the config value; it never merges with it.
+func listSetting(p parsed, name string, fromConfig, def []string) []string {
+	if p.has(name) {
+		return filter.SplitList(p.lists[name]...)
+	}
+	if fromConfig != nil {
+		return fromConfig
+	}
+	return def
+}
+
+func boolSetting(p parsed, name string, fromConfig *bool) bool {
+	if p.has(name) {
+		return p.bools[name]
+	}
+	return fromConfig != nil && *fromConfig
+}
+
+func parseAddOptions(args []string, getenv func(string) string, currentRepo func() (string, error), getwd func() (string, error)) (addOptions, *Error) {
 	path := addCommand.path()
 	p, perr := parse(args, addCommand.allOptions(), path)
 	if perr != nil {
 		return addOptions{}, perr
 	}
+	if p.has("config") && p.bools["no-config"] {
+		return addOptions{}, usageError("invalid_arguments", "Can't use --config with --no-config.", path)
+	}
+	conf, cerr := loadConfig(p, p.bools["no-config"], getenv, getwd)
+	if cerr != nil {
+		return addOptions{}, cerr
+	}
+	file := &config.File{}
+	where := "a config file"
+	if conf != nil {
+		file, where = conf.file, conf.display
+	}
+
 	o := addOptions{
-		owner: p.strs["owner"], all: p.bools["all"], dryRun: p.bools["dry-run"], yes: p.bools["yes"], json: p.bools["json"],
-		labelsRaw: filter.SplitList(p.lists["label"]...), excludedRaw: filter.SplitList(p.lists["exclude-label"]...),
-		authorsRaw: filter.SplitList(p.lists["author"]...), typesRaw: filter.SplitList(p.lists["type"]...),
-		statesRaw: filter.SplitList(p.lists["state"]...),
-		g:         globalOptions{noColor: p.bools["no-color"], nonInteractive: p.bools["non-interactive"]},
+		p: p, conf: conf, all: p.bools["all"], dryRun: p.bools["dry-run"], yes: p.bools["yes"], json: p.bools["json"],
+		g: globalOptions{noColor: p.bools["no-color"], nonInteractive: p.bools["non-interactive"]},
 	}
 	o.cfg = filter.Config{
-		Types: o.typesRaw, States: o.statesRaw, RequiredLabels: o.labelsRaw, ExcludedLabels: o.excludedRaw,
-		Authors: o.authorsRaw, IncludeDrafts: p.bools["drafts"], IncludeBots: p.bools["bots"],
-	}
-	if len(o.cfg.Types) == 0 {
-		o.cfg.Types = []string{filter.TypeIssue, filter.TypePullRequest}
-	}
-	if len(o.cfg.States) == 0 {
-		o.cfg.States = []string{filter.StateOpen}
+		Types:          listSetting(p, "type", file.Types, []string{filter.TypeIssue, filter.TypePullRequest}),
+		States:         listSetting(p, "state", file.States, []string{filter.StateOpen}),
+		RequiredLabels: listSetting(p, "label", file.Labels, nil),
+		ExcludedLabels: listSetting(p, "exclude-label", file.ExcludeLabels, nil),
+		Authors:        listSetting(p, "author", file.Authors, nil),
+		IncludeDrafts:  boolSetting(p, "drafts", file.Drafts),
+		IncludeBots:    boolSetting(p, "bots", file.Bots),
 	}
 
 	var issues []inputIssue
@@ -152,22 +180,38 @@ func parseAddOptions(args []string, getenv func(string) string, currentRepo func
 		issues = append(issues, inputIssue{field, reason, msg, missing})
 	}
 	switch {
-	case !p.has("owner"):
-		add("--owner", "missing_owner", "Pass the user or organization that owns the project.", true)
-	case !loginRe.MatchString(o.owner):
-		add("--owner", "invalid_arguments", fmt.Sprintf("%q isn't a valid user or organization login.", o.owner), false)
+	case p.has("owner"):
+		o.owner = p.strs["owner"]
+		if !ident.Login(o.owner) {
+			add("--owner", "invalid_arguments", fmt.Sprintf("%q isn't a valid user or organization login.", o.owner), false)
+		}
+	case file.Owner != "":
+		o.owner = file.Owner
+	default:
+		add("--owner", "missing_owner", fmt.Sprintf("Pass the project owner, or set project.owner in %s.", where), true)
 	}
-	if !p.has("project") {
-		add("--project", "missing_project", "Pass the project number from its URL.", true)
-	} else if n, err := strconv.Atoi(p.strs["project"]); err != nil || n < 1 {
-		add("--project", "invalid_arguments", fmt.Sprintf("%q isn't a project number. Use the number from the project URL.", p.strs["project"]), false)
-	} else {
-		o.project = n
+	switch {
+	case p.has("project"):
+		if n, err := strconv.Atoi(p.strs["project"]); err != nil || n < 1 {
+			add("--project", "invalid_arguments", fmt.Sprintf("%q isn't a project number. Use the number from the project URL.", p.strs["project"]), false)
+		} else {
+			o.project = n
+		}
+	case file.Number != 0:
+		o.project = file.Number
+	default:
+		add("--project", "missing_project", fmt.Sprintf("Pass the project number, or set project.number in %s.", where), true)
+	}
+	if len(o.cfg.Types) == 0 {
+		add("--type", "invalid_arguments", "Pass at least one type: issue or pull-request.", false)
 	}
 	for _, t := range o.cfg.Types {
 		if t != filter.TypeIssue && t != filter.TypePullRequest {
 			add("--type", "invalid_arguments", fmt.Sprintf("%q isn't a type. Use issue or pull-request.", t), false)
 		}
+	}
+	if len(o.cfg.States) == 0 {
+		add("--state", "invalid_arguments", "Pass at least one state: open or closed.", false)
 	}
 	for _, st := range o.cfg.States {
 		if st != filter.StateOpen && st != filter.StateClosed {
@@ -183,19 +227,22 @@ func parseAddOptions(args []string, getenv func(string) string, currentRepo func
 		o.numbers = append(o.numbers, n)
 	}
 
-	// Resolve the repositories. An explicit invalid value fails; it never falls back.
+	// Resolve the repositories: option, environment, config file, then the checkout.
+	// An explicit invalid value fails; it never falls back.
 	repoField := "--repo"
 	if p.has("repo") {
 		o.repos = filter.SplitList(p.lists["repo"]...)
 	} else if v := strings.TrimSpace(getenv("GH_REPO")); v != "" {
 		o.repos, o.repoSource, repoField = []string{stripHost(v)}, "GH_REPO", "GH_REPO"
+	} else if len(file.Repositories) > 0 {
+		o.repos, o.repoSource = file.Repositories, conf.display
 	} else if r, err := currentRepo(); err == nil && r != "" {
 		o.repos, o.repoSource = []string{r}, "git remote"
 	} else if v := strings.TrimSpace(getenv("GITHUB_REPOSITORY")); v != "" {
 		o.repos, o.repoSource, repoField = []string{v}, "GITHUB_REPOSITORY", "GITHUB_REPOSITORY"
 	}
 	for _, r := range o.repos {
-		if !repoRe.MatchString(r) {
+		if !ident.Repo(r) {
 			add(repoField, "invalid_arguments", fmt.Sprintf("%q must look like OWNER/REPO.", sanitize(r)), false)
 		}
 	}
@@ -281,7 +328,7 @@ type addRun struct {
 }
 
 func runAdd(ctx context.Context, args []string, s Streams, d Deps) int {
-	o, err := parseAddOptions(args, s.Getenv, d.CurrentRepo)
+	o, err := parseAddOptions(args, s.Getenv, d.CurrentRepo, d.Getwd)
 	m := resolveMode(s, scanGlobals(args), wantsFlag(args, "json", ""))
 	if err != nil {
 		return fail(s, m, err)
@@ -336,6 +383,9 @@ func (r *addRun) run(d Deps) int {
 
 	if r.human() {
 		r.p.row("Project", r.projectRef())
+		if r.o.conf != nil {
+			r.p.row("Config", r.o.conf.display)
+		}
 		label := "Repository"
 		if len(r.o.repos) > 1 {
 			label = "Repositories"
@@ -674,6 +724,13 @@ func (r *addRun) report(results []syncer.Result, empty bool) int {
 	return code
 }
 
+func (r *addRun) configPath() *string {
+	if r.o.conf == nil {
+		return nil
+	}
+	return &r.o.conf.display
+}
+
 func (r *addRun) viewProjectArgv() []string {
 	return []string{"gh", "project", "view", strconv.Itoa(r.o.project), "--owner", r.o.owner}
 }
@@ -727,6 +784,7 @@ func (r *addRun) writeJSON(results []syncer.Result) {
 			"owner": r.o.owner, "number": r.o.project, "id": r.project.ID,
 			"title": strOrNil(r.project.Title), "url": strOrNil(r.project.URL),
 		},
+		"config":  r.configPath(),
 		"dryRun":  r.o.dryRun,
 		"results": out,
 		"summary": summary,

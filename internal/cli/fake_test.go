@@ -122,6 +122,7 @@ type env struct {
 	ctx    context.Context
 	noAPI  bool // fail the test if the API is created
 	repo   string
+	cwd    string // where the config file search starts; "" searches nothing
 }
 
 type result struct {
@@ -155,6 +156,7 @@ func run(t *testing.T, f *fakeAPI, e env, args ...string) result {
 			}
 			return e.repo, nil
 		},
+		Getwd:   func() (string, error) { return e.cwd, nil },
 		Version: "v1.2.3",
 	}
 	ctx := e.ctx

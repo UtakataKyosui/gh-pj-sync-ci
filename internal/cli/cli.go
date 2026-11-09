@@ -22,33 +22,27 @@ type API interface {
 type Deps struct {
 	NewAPI      func() (API, error)
 	CurrentRepo func() (string, error) // the repository of the current git checkout
+	Getwd       func() (string, error) // where the config file search starts
 	Version     string
 }
 
 // Run runs the CLI and returns its exit code. Help and version never authenticate,
 // read config or touch the network.
 func Run(ctx context.Context, args []string, s Streams, d Deps) int {
-	// Help wins over everything, at any depth, before any other validation.
-	cmdName, rest := "", args
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		cmdName, rest = args[0], args[1:]
-	}
 	g := scanGlobals(args)
 	helpMode := resolveMode(s, g, false)
+	c, rest, unknown := resolveCommand(args)
 
-	if cmdName == "help" {
+	// Help wins over everything, at any depth, before any other validation.
+	if c.name == "help" {
 		return runHelp(rest, s, helpMode)
 	}
 	if wantsFlag(args, "help", "h") {
-		if cmdName == "" {
-			renderHelp(s.Out, helpMode.Out, rootCommand)
-			return exitOK
+		if unknown != "" {
+			return fail(s, helpMode, unknownCommand(c, unknown))
 		}
-		if c, ok := findCommand(cmdName); ok {
-			renderHelp(s.Out, helpMode.Out, c)
-			return exitOK
-		}
-		return fail(s, helpMode, unknownCommand(cmdName))
+		renderHelp(s.Out, helpMode.Out, c)
+		return exitOK
 	}
 	if wantsFlag(args, "version", "v") {
 		if wantsFlag(args, "json", "") {
@@ -59,54 +53,51 @@ func Run(ctx context.Context, args []string, s Streams, d Deps) int {
 		}
 		return exitOK
 	}
+	if unknown != "" {
+		return fail(s, helpMode, unknownCommand(c, unknown))
+	}
 
-	switch cmdName {
-	case "":
-		if _, err := parse(rest, globalOpts, binName); err != nil {
-			return fail(s, helpMode, err)
-		}
-		renderHelp(s.Out, helpMode.Out, rootCommand)
-		return exitOK
+	switch c.name {
 	case "add":
 		return runAdd(ctx, rest, s, d)
+	case "config check":
+		return runConfigCheck(rest, s, d)
 	}
-	return fail(s, helpMode, unknownCommand(cmdName))
+	// A group without an action shows its help.
+	if _, err := parse(rest, globalOpts, c.path()); err != nil {
+		return fail(s, helpMode, err)
+	}
+	renderHelp(s.Out, helpMode.Out, c)
+	return exitOK
 }
 
-func runHelp(rest []string, s Streams, m Mode) int {
-	var topics []string
-	for _, a := range rest {
+func runHelp(topics []string, s Streams, m Mode) int {
+	var words []string
+	for _, a := range topics {
 		if !strings.HasPrefix(a, "-") {
-			topics = append(topics, a)
+			words = append(words, a)
 		}
 	}
-	switch {
-	case len(topics) == 0:
-		renderHelp(s.Out, m.Out, rootCommand)
-		return exitOK
-	case len(topics) > 1:
-		return fail(s, m, usageError("unknown_command",
-			fmt.Sprintf("Unknown command %s for %s %s.", topics[1], binName, topics[0]), binName))
-	}
-	c, ok := findCommand(topics[0])
-	if !ok {
-		return fail(s, m, unknownCommand(topics[0]))
+	c, _, unknown := resolveCommand(words)
+	if unknown != "" || c.name == "help" && len(words) > 1 {
+		return fail(s, m, unknownCommand(c, unknown))
 	}
 	renderHelp(s.Out, m.Out, c)
 	return exitOK
 }
 
-func unknownCommand(name string) *Error {
+func unknownCommand(parent command, name string) *Error {
 	var names []string
-	for _, c := range commands() {
-		names = append(names, c.name)
+	for _, c := range parent.children() {
+		names = append(names, c.leaf())
 	}
-	msg := fmt.Sprintf("Unknown command %s for %s.", sanitize(name), binName)
+	path := strings.TrimSpace(binName + " " + parent.name)
+	msg := fmt.Sprintf("Unknown command %s for %s.", sanitize(name), path)
 	if sug := suggest(name, names); sug != "" {
 		msg += fmt.Sprintf(" Did you mean %s?", sug)
 	}
 	return &Error{Exit: exitUsage, Status: statusError, Reason: "unknown_command", Message: msg,
-		Recovery: []Recovery{{Instruction: "See all commands", Argv: []string{"gh", "pj-synker", "--help"}}}}
+		Recovery: []Recovery{{Instruction: "See all commands", Argv: append(strings.Fields(path), "--help")}}}
 }
 
 // wantsFlag reports whether a Boolean option appears before "--".

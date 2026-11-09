@@ -1,0 +1,11 @@
+$ exit 1
+--- stdout
+--- stderr
+✗ .github/pj-synker.yml:1 isn't valid YAML.
+  YAML            did not find expected ',' or ']'
+
+    1 | project:
+    2 |   owner: [acme
+
+  Fix the file, then check it:
+    gh pj-synker config check

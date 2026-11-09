@@ -4,8 +4,9 @@ gh pj-synker <command> [options]
 Add issues and pull requests to GitHub Projects
 
 Commands:
-  add   Add eligible issues and pull requests to a project
-  help  Show help for a command
+  add     Add eligible issues and pull requests to a project
+  config  Inspect the config file
+  help    Show help for a command
 
 Global Options:
   -h, --help         Show help for a command

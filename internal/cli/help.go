@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	binName   = "gh pj-synker"
-	docsURL   = "https://github.com/UtakataKyosui/gh-pj-synker#readme"
-	maxSyntx  = 28
-	helpWidth = 80
+	binName = "gh pj-synker"
+	docsURL = "https://github.com/UtakataKyosui/gh-pj-synker#readme"
+	// configDocsURL documents the config file format.
+	configDocsURL = "https://github.com/UtakataKyosui/gh-pj-synker/blob/main/docs/config.md"
+	maxSyntx      = 28
+	helpWidth     = 80
 )
 
 type argDoc struct{ syntax, desc string }
@@ -24,7 +26,8 @@ type example struct {
 }
 
 type command struct {
-	name     string
+	name     string // full path below the root, such as "config check"
+	subs     []command
 	usage    string
 	summary  string
 	args     []argDoc
@@ -33,7 +36,7 @@ type command struct {
 	notes    []string
 }
 
-func (c command) path() string { return binName + " " + c.name }
+func (c command) path() string { return strings.TrimSpace(binName + " " + c.name) }
 
 // allOptions is the full option set a leaf command parses: its own plus the globals.
 func (c command) allOptions() []option {
@@ -45,21 +48,51 @@ var rootCommand = command{
 	summary: "Add issues and pull requests to GitHub Projects",
 }
 
-func commands() []command { return []command{addCommand, helpCommand} }
+func commands() []command { return []command{addCommand, configCommand, helpCommand} }
+
+func (c command) children() []command {
+	if c.name == "" {
+		return commands()
+	}
+	return c.subs
+}
+
+func (c command) leaf() string {
+	parts := strings.Fields(c.name)
+	return parts[len(parts)-1]
+}
 
 var helpCommand = command{
 	name:    "help",
-	usage:   binName + " help [<command>]",
+	usage:   binName + " help [<command>]...",
 	summary: "Show help for a command",
 }
 
-func findCommand(name string) (command, bool) {
-	for _, c := range commands() {
-		if c.name == name {
-			return c, true
+// resolveCommand walks the leading words of args down the command tree. It returns the
+// deepest command, the remaining args and, when a word names no command, that word.
+func resolveCommand(args []string) (command, []string, string) {
+	cur := rootCommand
+	for len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		subs := cur.children()
+		if len(subs) == 0 {
+			break // a leaf command: the rest are its arguments
+		}
+		next, ok := command{}, false
+		for _, sub := range subs {
+			if sub.leaf() == args[0] {
+				next, ok = sub, true
+				break
+			}
+		}
+		if !ok {
+			return cur, args, args[0]
+		}
+		cur, args = next, args[1:]
+		if cur.name == "help" {
+			break
 		}
 	}
-	return command{}, false
+	return cur, args, ""
 }
 
 type helpWriter struct {
@@ -120,14 +153,16 @@ func renderHelp(w io.Writer, st Style, c command) {
 	fmt.Fprintln(w, usage)
 	fmt.Fprintln(w, c.summary)
 
-	if c.name == "" {
+	if subs := c.children(); len(subs) > 0 {
 		fmt.Fprintln(w)
 		h.heading("Commands:")
 		var rows [][2]string
-		for _, sub := range commands() {
-			rows = append(rows, [2]string{sub.name, sub.summary})
+		for _, sub := range subs {
+			rows = append(rows, [2]string{sub.leaf(), sub.summary})
 		}
 		h.entries(rows)
+	}
+	if c.name == "" {
 		fmt.Fprintln(w)
 		h.heading("Global Options:")
 		h.entries(optionRows(globalOpts))

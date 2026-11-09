@@ -1,0 +1,11 @@
+$ exit 1
+--- stdout
+--- stderr
+✗ Can't read .github/pj-synker.yml. 4 settings are invalid.
+  2:10            "a b" isn't a valid user or organization login.
+  3:11            "project.number" must be a positive whole number.
+  5:11            "discussion" isn't a type. Use issue or pull-request.
+  6:11            "filters.drafts" must be true or false.
+
+  Fix the file, then check it:
+    gh pj-synker config check

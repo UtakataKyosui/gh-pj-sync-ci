@@ -1,0 +1,8 @@
+$ exit 1
+--- stdout
+--- stderr
+✗ Couldn't find a config file.
+  Searched        .github/pj-synker.yml or .yaml, .pj-synker.yml or .yaml
+
+  Create .github/pj-synker.yml at the root of the repository. See the format:
+    https://github.com/UtakataKyosui/gh-pj-synker/blob/main/docs/config.md

@@ -1,0 +1,16 @@
+$ exit 0
+--- stdout
+✓ Valid           .pj-synker.yml
+  Owner           not set
+  Project         not set
+  Repositories    current repository (default)
+  Types           issue, pull-request (default)
+  States          open (default)
+  Labels          any (default)
+  Exclude labels  none (default)
+  Authors         any (default)
+  Drafts          Draft pull requests excluded (default)
+  Bots            Bot items included
+
+  Without project.owner and project.number, pass --owner and --project to add.
+--- stderr

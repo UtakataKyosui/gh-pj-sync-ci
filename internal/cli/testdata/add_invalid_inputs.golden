@@ -3,7 +3,7 @@ $ exit 2
 --- stderr
 ✗ Can't add items. 4 inputs are invalid.
   --owner         "a b" isn't a valid user or organization login.
-  --project       Pass the project number from its URL.
+  --project       Pass the project number, or set project.number in a config file.
   --type          "discussion" isn't a type. Use issue or pull-request.
   <number>        "x" isn't an issue or pull request number.
 

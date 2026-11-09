@@ -10,13 +10,15 @@ Options:
   --all                     Check every item in the repositories
   --author <LOGINS>         Only add items by these authors (default: any)
   --bots                    Include items by bot accounts (default: false)
+  --config <FILE>           Config file to read (default: found automatically)
   --drafts                  Include draft pull requests (default: false)
   --dry-run                 Show what would be added, without adding
   --exclude-label <LABELS>  Skip items that have any of these labels
   --json                    Print the result as JSON on stdout
   --label <LABELS>          Only add items that have all of these labels
-  --owner <LOGIN>           Project owner: user or organization (required)
-  --project <NUMBER>        Project number from its URL (required)
+  --no-config               Don't read a config file
+  --owner <LOGIN>           Project owner: user or organization
+  --project <NUMBER>        Project number from its URL
   -R, --repo <REPOS>        OWNER/REPO list (default: current repository)
   --state <STATES>          Item states: open, closed (default: open)
   --type <TYPES>            Item types: issue, pull-request (default: both)
@@ -26,22 +28,27 @@ Global Options:
   See `gh pj-synker --help`
 
 Examples:
-  Add an issue to a project
+  Add an issue to the project set in the config file
+    gh pj-synker add 42
+
+  Add an issue to a project without a config file
     gh pj-synker add 42 --owner acme --project 1
 
   Preview which triaged items would be added
-    gh pj-synker add --all --owner acme --project 1 --label triaged --dry-run
+    gh pj-synker add --all --label triaged --dry-run
 
   Add every eligible item in CI and read the result
-    gh pj-synker add --all --owner acme --project 1 --yes --json
+    gh pj-synker add --all --yes --json
 
 Notes:
+  --owner and --project are required unless the config file sets them.
+  Options override the config file. See gh pj-synker config check --help.
   Lists are comma-separated, such as --label triaged,accepted.
   Matching ignores case. An excluded label wins over a required label.
   Items are only added. Nothing is removed, archived, or written back.
   Items already in the project are reported as unchanged, never duplicated.
-  The repository comes from --repo, GH_REPO, the current git checkout,
-  then GITHUB_REPOSITORY.
+  The repository comes from --repo, GH_REPO, the config file, the current
+  git checkout, then GITHUB_REPOSITORY.
   Authentication uses gh auth login, or GH_TOKEN in CI.
   The token needs the project scope.
 

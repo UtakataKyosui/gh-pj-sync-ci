@@ -80,14 +80,41 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
+func hasOwner(argv []string) bool {
+	for _, a := range argv {
+		if a == "--owner" {
+			return true
+		}
+	}
+	return false
+}
+
+func allCommands(cs []command) []command {
+	var out []command
+	for _, c := range cs {
+		out = append(out, c)
+		out = append(out, allCommands(c.subs)...)
+	}
+	return out
+}
+
+// Every example must parse against the current option metadata. Examples that rely on the
+// config file for --owner and --project get them added, as the config file would.
 func TestHelpExamplesParse(t *testing.T) {
-	for _, c := range commands() {
+	for _, c := range allCommands(commands()) {
 		for _, ex := range c.examples {
-			if strings.Join(ex.argv[:3], " ") != "gh pj-synker "+c.name {
+			if strings.Join(ex.argv[:2+len(strings.Fields(c.name))], " ") != "gh pj-synker "+c.name {
 				t.Errorf("example %v doesn't start with its command", ex.argv)
 			}
-			if _, err := parseAddOptions(ex.argv[3:], func(string) string { return "" },
-				func() (string, error) { return "acme/web", nil }); err != nil {
+			if c.name != "add" {
+				continue
+			}
+			argv := append([]string(nil), ex.argv[3:]...)
+			if !hasOwner(argv) {
+				argv = append(argv, "--owner", "acme", "--project", "1")
+			}
+			if _, err := parseAddOptions(argv, func(string) string { return "" },
+				func() (string, error) { return "acme/web", nil }, func() (string, error) { return "", nil }); err != nil {
 				t.Errorf("example %v: %v", ex.argv, err.Message)
 			}
 		}
@@ -95,7 +122,7 @@ func TestHelpExamplesParse(t *testing.T) {
 }
 
 func TestHelpFitsIn80Columns(t *testing.T) {
-	for _, c := range append(commands(), rootCommand) {
+	for _, c := range append(allCommands(commands()), rootCommand) {
 		r := run(t, nil, env{noAPI: true}, append(strings.Fields(c.name), "--help")...)
 		for _, line := range strings.Split(r.stdout, "\n") {
 			if n := len([]rune(line)); n > 80 {

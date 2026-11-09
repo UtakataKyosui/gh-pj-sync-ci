@@ -173,6 +173,19 @@ CI（`CI`環境変数あり）では、自動的に非対話モードになり�
 - 判定は、その時点のAPIの情報で行います。検査と追加は単一トランザクションではありません。
 - 閉じたProjectには追加しません。追加はGitHub API上で冪等なので、再実行しても重複しません。
 
+### GitHub ProjectsのWorkflowsとの併用
+
+Projectの設定にある組み込みのWorkflowsとは、役割が重なる部分があります。このツールはAPIで項目を追加するだけで、Workflowsの設定を読み書きしません。
+
+| Workflow | 併用時の挙動 |
+| --- | --- |
+| Auto-add to project | 追加条件が重なります。どちらが先に追加しても、もう一方は「すでにProjectにある」（`unchanged`）になるだけで、重複や失敗にはなりません。条件が違う場合、両方の和集合が追加されます。このツールの`filters`で絞っても、Workflow側の条件に合う項目は追加されます |
+| Item added to project | 項目の追加を契機にStatusなどを設定するWorkflowは、このツールの追加でも動作する想定です。このツールはStatusを書かないため、値を取り合うことはありません。動作は自分のProjectで確認してください |
+| Auto-archive items | アーカイブされた項目が条件に合い続けていると、このツールの再実行で再び追加されうるため、追加とアーカイブが繰り返される可能性があります。`--state`、`--label`、`--exclude-label`をアーカイブ条件と逆の関係に揃えてください |
+| Item closed／Pull request merged など | Statusを変えるWorkflowです。このツールはStatusを更新しないため、競合しません |
+
+追加条件はどちらか一方に寄せることを推奨します。このツールを使う場合は、Auto-add to projectを無効にしておくと、項目が入る理由を1か所で追えます。
+
 ## 設計方針
 
 CLIの振る舞いは[Vercel CLI design](https://vercel.com/design/cli)のガイドラインに沿っています。

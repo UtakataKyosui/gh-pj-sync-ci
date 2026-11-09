@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 
@@ -411,5 +413,60 @@ func TestAPIErrorMapping(t *testing.T) {
 				t.Fatal("remote messages must stay out of the headline")
 			}
 		})
+	}
+}
+
+func TestCtrlCEndsTheConfirmationPrompt(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	f := mixedFake()
+	e := noColorTTY()
+	e.ctx, e.in = ctx, pr
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	done := make(chan result, 1)
+	go func() {
+		done <- run(t, f, e, args("--all", "--label", "triaged", "--exclude-label", "blocked")...)
+	}()
+	select {
+	case r := <-done:
+		if r.code != exitCanceled || len(f.added) != 0 || !strings.Contains(r.stderr, "Canceled. Nothing was changed.") {
+			t.Fatalf("%+v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the prompt kept waiting for input after the interrupt")
+	}
+}
+
+func TestCancelDuringAddReportsTheUncertainItem(t *testing.T) {
+	for _, jsonOut := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		f := newFake()
+		f.put("acme/web", 1, nil)
+		f.addErr = context.Canceled
+		f.onAdd = cancel
+		e := ci()
+		e.ctx = ctx
+		a := args("1")
+		if jsonOut {
+			a = args("1", "--json")
+		}
+		r := run(t, f, e, a...)
+		if r.code != exitCanceled {
+			t.Fatalf("%+v", r)
+		}
+		if jsonOut {
+			data := decodeJSON(t, r.stderr)["data"].(map[string]any)
+			if u := data["unknownOutcome"].([]any); len(u) != 1 || u[0] != "acme/web#1" {
+				t.Fatalf("%v", data)
+			}
+			continue
+		}
+		if strings.Contains(r.stderr, "Nothing was changed") || !strings.Contains(r.stderr, "Canceled while adding acme/web#1. It may or may not have been added.") {
+			t.Fatalf("%s", r.stderr)
+		}
 	}
 }

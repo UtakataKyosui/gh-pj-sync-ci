@@ -1,0 +1,28 @@
+# Copy to .github/workflows/ in the repository whose issues/PRs you want to sync.
+name: Sync eligible items to Project
+on:
+  issues:
+    types: [opened, reopened, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, reopened, labeled, unlabeled, ready_for_review, converted_to_draft]
+permissions:
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # Do NOT check out or run the PR's code in a pull_request_target workflow.
+      - name: Install gh-pj-synker
+        run: gh extension install UtakataKyosui/gh-pj-synker --pin v0.1.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Sync
+        run: |
+          gh pj-synker \
+            --project-owner your-organization \
+            --project-number 1 \
+            --required-labels 'triaged, accepted' \
+            --excluded-labels 'blocked, invalid'
+        env:
+          # Needs Projects read/write; the default GITHUB_TOKEN is not enough.
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}

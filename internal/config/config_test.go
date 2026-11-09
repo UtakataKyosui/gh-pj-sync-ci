@@ -92,6 +92,7 @@ func TestParseIssues(t *testing.T) {
 		{"filters:\n  drafts: yes\n", []Issue{{2, 11, `"filters.drafts" must be true or false.`}}},
 		{"filters:\n  labels: [a, ~]\n", []Issue{{2, 15, "filters.labels[1] must be a non-empty string."}}},
 		{"project:\n  owner: a\n  owner: b\n", []Issue{{3, 3, `"project.owner" is set more than once.`}}},
+		{"project:\n  owner: acme\n---\nfilters:\n  drafts: true\n", []Issue{{4, 1, `Only one YAML document is allowed. Remove the extra "---" section or merge it into the first.`}}},
 		{"- a\n- b\n", []Issue{{1, 1, `The file must be a mapping of settings, such as "project:".`}}},
 		{"project:\n  ownr: x\nfilters:\n  drafts: 1\n", []Issue{
 			{2, 3, `"project.ownr" isn't a setting. Did you mean "project.owner"?`},
@@ -101,6 +102,14 @@ func TestParseIssues(t *testing.T) {
 	for _, tt := range tests {
 		if got := issues(t, tt.src); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%q:\n got  %+v\n want %+v", tt.src, got, tt.want)
+		}
+	}
+}
+
+func TestParseAllowsADocumentMarkerWithoutASecondDocument(t *testing.T) {
+	for _, src := range []string{"---\nproject:\n  owner: acme\n", "project:\n  owner: acme\n---\n", "project:\n  owner: acme\n...\n"} {
+		if _, err := Parse([]byte(src), "x.yml"); err != nil {
+			t.Errorf("%q: %v", src, err)
 		}
 	}
 }

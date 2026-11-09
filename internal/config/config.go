@@ -5,8 +5,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -136,19 +138,32 @@ var syntaxLineRe = regexp.MustCompile(`^yaml: line (\d+): (.*)$`)
 // Parse validates YAML source. Every problem is reported at once.
 func Parse(data []byte, display string) (*File, error) {
 	f := &File{Path: display, Version: CurrentVersion}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	syntax := func(err error) error {
 		e := &Error{Path: display, Source: data, Syntax: strings.TrimPrefix(err.Error(), "yaml: ")}
 		if m := syntaxLineRe.FindStringSubmatch(err.Error()); m != nil {
 			e.Line, _ = strconv.Atoi(m[1])
 			e.Syntax = m[2]
 		}
-		return nil, e
+		return e
+	}
+	var doc yaml.Node
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
+		return nil, syntax(err)
 	}
 	if doc.Kind == 0 || len(doc.Content) == 0 {
 		return f, nil // an empty file sets nothing
 	}
 	d := &decoder{file: f}
+	// Settings in a later document would be ignored without a word, so reject them.
+	var extra yaml.Node
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return nil, syntax(err)
+	case len(extra.Content) > 0 && !(extra.Content[0].Kind == yaml.ScalarNode && extra.Content[0].Tag == "!!null"):
+		d.issue(extra.Content[0], "Only one YAML document is allowed. Remove the extra \"---\" section or merge it into the first.")
+	}
 	root := resolve(doc.Content[0])
 	if root.Kind != yaml.MappingNode {
 		d.issue(root, "The file must be a mapping of settings, such as \"project:\".")

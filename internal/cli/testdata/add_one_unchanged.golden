@@ -1,0 +1,9 @@
+$ exit 0
+--- stdout
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          git remote
+
+  acme/web#5 is already in acme/1.
+  Item ID         PVTI_existing

@@ -1,0 +1,42 @@
+# Copy to .github/workflows/ in the repository whose issues and pull requests you want to sync.
+name: Add eligible items to the project
+on:
+  issues:
+    types: [opened, reopened, labeled, unlabeled]
+  pull_request_target:
+    types: [opened, reopened, labeled, unlabeled, ready_for_review, converted_to_draft]
+  schedule:
+    - cron: '17 3 * * *'
+permissions:
+  contents: read
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      # Never check out or run pull request code in a pull_request_target workflow.
+      - name: Install gh-pj-synker
+        run: gh extension install UtakataKyosui/gh-pj-synker --pin v0.1.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Add the event's item
+        if: github.event_name != 'schedule'
+        env:
+          # Needs project read/write; the default GITHUB_TOKEN can't write to projects.
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: >
+          gh pj-synker add "$NUMBER"
+          --owner your-organization --project 1
+          --label triaged --exclude-label blocked
+
+      - name: Catch up on every eligible item
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+        run: >
+          gh pj-synker add --all --yes --json
+          --owner your-organization --project 1
+          --label triaged --exclude-label blocked
+          > result.json

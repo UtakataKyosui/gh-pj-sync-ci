@@ -1,0 +1,9 @@
+$ exit 0
+--- stdout
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          git remote
+
+  Skipped         acme/web#5
+  Reason          It's missing the required label "accepted".

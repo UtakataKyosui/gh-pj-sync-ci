@@ -1,0 +1,11 @@
+$ exit 2
+--- stdout
+--- stderr
+✗ Can't add items. 4 inputs are invalid.
+  --owner         "a b" isn't a valid user or organization login.
+  --project       Pass the project number from its URL.
+  --type          "discussion" isn't a type. Use issue or pull-request.
+  <number>        "x" isn't an issue or pull request number.
+
+  See all options:
+    gh pj-synker add --help

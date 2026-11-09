@@ -1,0 +1,14 @@
+$ exit 0
+--- stdout
+PVTI_I_acme_web_5
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          GITHUB_REPOSITORY
+
+Added acme/web#5
+  Title           Item 5
+  Item ID         PVTI_I_acme_web_5
+
+  View the project:
+    gh project view 1 --owner acme

@@ -1,0 +1,17 @@
+$ exit 0
+--- stdout
+gh pj-synker <command> [options]
+Add issues and pull requests to GitHub Projects
+
+Commands:
+  add   Add eligible issues and pull requests to a project
+  help  Show help for a command
+
+Global Options:
+  -h, --help         Show help for a command
+  --no-color         Turn off color
+  --non-interactive  Never prompt; fail when input or confirmation is missing
+  -v, --version      Print the version
+
+Learn more: https://github.com/UtakataKyosui/gh-pj-synker#readme
+--- stderr

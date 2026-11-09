@@ -78,6 +78,33 @@ func TestInitRefusesASecondConfigFile(t *testing.T) {
 	}
 }
 
+func TestInitExplicitDefaultPathStillChecksForCompetingConfigs(t *testing.T) {
+	dir := repoDir(t, ".pj-synker.yml", "project:\n  owner: old\n  number: 1\n")
+	e := inDir(env{noAPI: true, vars: map[string]string{}}, dir)
+	r := run(t, nil, e, "init", "--owner", "acme", "--project", "2", "--path", ".github/pj-synker.yml")
+	if r.code != exitFailure || !strings.Contains(r.stderr, ".pj-synker.yml is already a config file") {
+		t.Fatalf("%+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".github", "pj-synker.yml")); err == nil {
+		t.Fatal("a second config file was written")
+	}
+	// A custom name is never discovered, so it can sit beside an existing config.
+	if r := run(t, nil, e, "init", "--owner", "acme", "--project", "2", "--path", "ci/pj.yml"); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestInitWithANumericLookingOwner(t *testing.T) {
+	dir := repoDir(t, "", "")
+	r := run(t, nil, inDir(env{noAPI: true, vars: map[string]string{}}, dir), "init", "--owner", "1e3", "--project", "1")
+	if r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if f := readConfig(t, filepath.Join(dir, ".github", "pj-synker.yml")); f.Owner != "1e3" {
+		t.Fatalf("%+v", f)
+	}
+}
+
 func TestInitDryRunWritesNothing(t *testing.T) {
 	dir := repoDir(t, "", "")
 	r := run(t, nil, inDir(env{noAPI: true, vars: map[string]string{}}, dir), "init", "--owner", "acme", "--project", "2", "--dry-run")

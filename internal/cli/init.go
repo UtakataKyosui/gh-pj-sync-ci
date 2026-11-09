@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -335,15 +336,39 @@ func (r *initRun) existingConfig(target string) string {
 	if _, err := os.Stat(target); err == nil {
 		return target
 	}
+	dir := filepath.Dir(filepath.Dir(target))
 	if r.p.has("path") {
-		return ""
+		// A custom path is never discovered, but one of the default names competes with other candidates.
+		var ok bool
+		if dir, ok = discoveryDir(target); !ok {
+			return ""
+		}
 	}
-	found, err := config.Discover(filepath.Dir(filepath.Dir(target)))
+	found, err := config.Discover(dir)
 	var amb *config.ErrAmbiguous
 	if errors.As(err, &amb) {
 		return amb.Paths[0]
 	}
 	return found
+}
+
+// discoveryDir is the directory whose discovery would read target, if target has a default name.
+func discoveryDir(target string) (string, bool) {
+	dir, name := filepath.Split(target)
+	dir = filepath.Clean(dir)
+	for _, n := range config.Names {
+		if path.Base(n) != name {
+			continue
+		}
+		if parent := path.Dir(n); parent != "." {
+			if filepath.Base(dir) == parent {
+				return filepath.Dir(dir), true
+			}
+			continue
+		}
+		return dir, true
+	}
+	return "", false
 }
 
 func (r *initRun) conflict(existing, display string, same bool) *Error {

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SchemaURL is referenced from generated files so editors can complete and validate them.
@@ -19,11 +21,21 @@ var plainScalar = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 // quote renders a string as a YAML scalar that is safe inside a flow sequence.
 // Anything beyond plain words is written as a double-quoted (JSON) string.
 func quote(s string) string {
-	if plainScalar.MatchString(s) && !reserved[strings.ToLower(s)] {
+	if plainScalar.MatchString(s) && !reserved[strings.ToLower(s)] && readsAsString(s) {
 		return s
 	}
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// readsAsString reports whether YAML resolves the plain scalar to a string, not a number or date.
+func readsAsString(s string) bool {
+	var v any
+	if err := yaml.Unmarshal([]byte(s), &v); err != nil {
+		return false
+	}
+	_, ok := v.(string)
+	return ok
 }
 
 // reserved are plain scalars YAML would read as something other than a string.

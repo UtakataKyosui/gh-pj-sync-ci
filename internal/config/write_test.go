@@ -12,9 +12,9 @@ import (
 func TestRenderRoundTrips(t *testing.T) {
 	yes, no := true, false
 	in := File{
-		Owner: "acme", Number: 7, Repositories: []string{"acme/web", "acme/api"},
+		Owner: "1e3", Number: 7, Repositories: []string{"acme/web", "acme/api"},
 		Types: []string{"issue"}, States: []string{"open", "closed"},
-		Labels:        []string{"triaged", "good first issue", "a, b", "yes", "type: bug", `say "hi"`, "#1"},
+		Labels:        []string{"triaged", "good first issue", "a, b", "yes", "1e3", "0x1f", "12", "2024-01-02", "type: bug", `say "hi"`, "#1"},
 		ExcludeLabels: []string{}, Authors: []string{"alice"}, Drafts: &yes, Bots: &no,
 	}
 	out, err := Parse(Render(in), "x.yml")
@@ -22,7 +22,7 @@ func TestRenderRoundTrips(t *testing.T) {
 		t.Fatalf("%v\n%s", err, Render(in))
 	}
 	in.Path, in.Version = "x.yml", 1
-	in.Labels = []string{"triaged", "good first issue", "a, b", "yes", "type: bug", `say "hi"`, "#1"}
+	in.Labels = []string{"triaged", "good first issue", "a, b", "yes", "1e3", "0x1f", "12", "2024-01-02", "type: bug", `say "hi"`, "#1"}
 	if !reflect.DeepEqual(*out, in) {
 		t.Fatalf("round trip:\n got  %+v\n want %+v\n%s", *out, in, Render(in))
 	}

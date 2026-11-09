@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -357,10 +356,10 @@ func discoveryDir(target string) (string, bool) {
 	dir, name := filepath.Split(target)
 	dir = filepath.Clean(dir)
 	for _, n := range config.Names {
-		if path.Base(n) != name {
+		if filepath.Base(n) != name {
 			continue
 		}
-		if parent := path.Dir(n); parent != "." {
+		if parent := filepath.Dir(n); parent != "." {
 			if filepath.Base(dir) == parent {
 				return filepath.Dir(dir), true
 			}

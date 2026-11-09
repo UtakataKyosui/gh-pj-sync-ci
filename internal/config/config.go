@@ -161,7 +161,7 @@ func Parse(data []byte, display string) (*File, error) {
 	case errors.Is(err, io.EOF):
 	case err != nil:
 		return nil, syntax(err)
-	case len(extra.Content) > 0 && !(extra.Content[0].Kind == yaml.ScalarNode && extra.Content[0].Tag == "!!null"):
+	case len(extra.Content) > 0 && (extra.Content[0].Kind != yaml.ScalarNode || extra.Content[0].Tag != "!!null"):
 		d.issue(extra.Content[0], "Only one YAML document is allowed. Remove the extra \"---\" section or merge it into the first.")
 	}
 	root := resolve(doc.Content[0])

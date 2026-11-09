@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 
@@ -89,7 +90,11 @@ func Discover(dir string) (string, error) {
 		var found []string
 		for _, name := range Names {
 			p := filepath.Join(dir, name)
-			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			ok, err := isFile(p)
+			if err != nil {
+				return "", err
+			}
+			if ok {
 				found = append(found, p)
 			}
 		}
@@ -101,12 +106,34 @@ func Discover(dir string) (string, error) {
 		}
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return "", nil // reached the root of the checkout
+		} else if !isAbsent(err) {
+			return "", err
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir || !insideGit(parent) {
 			return "", nil
 		}
 		dir = parent
+	}
+}
+
+// isAbsent reports whether a stat error only means the path isn't there. Anything else, such
+// as a permission error or a symlink loop, must not read as "no config": the run would go on
+// without the filters the file was meant to apply.
+func isAbsent(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// isFile reports whether path is a regular candidate. A missing path is not an error.
+func isFile(path string) (bool, error) {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return !info.IsDir(), nil
+	case isAbsent(err):
+		return false, nil
+	default:
+		return false, err
 	}
 }
 

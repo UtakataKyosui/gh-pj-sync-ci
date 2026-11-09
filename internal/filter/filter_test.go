@@ -1,76 +1,70 @@
 package filter
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func base() Config {
-	return Config{
-		Types: []string{TypeIssue, TypePullRequest}, States: []string{StateOpen},
-		ExcludeDrafts: true, ExcludeBots: true,
-	}
+	return Config{Types: []string{TypeIssue, TypePullRequest}, States: []string{StateOpen}}
 }
 
-func TestParseList(t *testing.T) {
-	got := ParseList(" Triaged, Accepted\nBlocked ,, ")
+func TestSplitList(t *testing.T) {
+	got := SplitList(" Triaged, Accepted", "Blocked ,, ", "")
 	want := []string{"triaged", "accepted", "blocked"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v", got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("got %v want %v", got, want)
-		}
-	}
-}
-
-func TestValidate(t *testing.T) {
-	if err := base().Validate(); err != nil {
-		t.Fatal(err)
-	}
-	c := base()
-	c.Types = []string{"discussion"}
-	if c.Validate() == nil {
-		t.Fatal("expected invalid type error")
-	}
-	c = base()
-	c.States = nil
-	if c.Validate() == nil {
-		t.Fatal("expected empty states error")
+	if SplitList() != nil || SplitList(" , ") != nil {
+		t.Fatal("expected nil for empty input")
 	}
 }
 
 func TestEvaluate(t *testing.T) {
 	issue := Item{Type: TypeIssue, State: StateOpen, Author: "Alice", Labels: []string{"Triaged", "Accepted"}}
 	tests := []struct {
-		name   string
-		mod    func(*Config, *Item)
-		wantOK bool
-		reason string
+		name    string
+		mod     func(*Config, *Item)
+		reason  string
+		message string
 	}{
-		{"passes", func(*Config, *Item) {}, true, ""},
-		{"type", func(c *Config, _ *Item) { c.Types = []string{TypePullRequest} }, false, "Item type is not allowed."},
-		{"state", func(_ *Config, i *Item) { i.State = StateClosed }, false, "Item state is not allowed."},
-		{"closed allowed", func(c *Config, i *Item) { i.State = StateClosed; c.States = []string{StateClosed} }, true, ""},
-		{"bot", func(_ *Config, i *Item) { i.IsBot = true }, false, "Bot-authored items are excluded."},
-		{"bot allowed", func(c *Config, i *Item) { i.IsBot = true; c.ExcludeBots = false }, true, ""},
-		{"author denied", func(c *Config, _ *Item) { c.Authors = []string{"bob"} }, false, "Item author is not allowed."},
-		{"author case-insensitive", func(c *Config, _ *Item) { c.Authors = []string{"alice"} }, true, ""},
-		{"draft", func(_ *Config, i *Item) { i.Type = TypePullRequest; i.Draft = true }, false, "Draft pull requests are excluded."},
-		{"draft allowed", func(c *Config, i *Item) { i.Type = TypePullRequest; i.Draft = true; c.ExcludeDrafts = false }, true, ""},
-		{"required ok", func(c *Config, _ *Item) { c.RequiredLabels = []string{"triaged", "accepted"} }, true, ""},
-		{"required missing", func(c *Config, _ *Item) { c.RequiredLabels = []string{"triaged", "ready"} }, false, "Item is missing a required label."},
-		{"excluded", func(c *Config, _ *Item) { c.ExcludedLabels = []string{"accepted"} }, false, "Item has an excluded label."},
+		{"passes", func(*Config, *Item) {}, "", ""},
+		{"type", func(c *Config, _ *Item) { c.Types = []string{TypePullRequest} },
+			ReasonTypeNotAllowed, "Issues aren't included. Allowed types: pull-request."},
+		{"pr type", func(c *Config, i *Item) { c.Types = []string{TypeIssue}; i.Type = TypePullRequest },
+			ReasonTypeNotAllowed, "Pull requests aren't included. Allowed types: issue."},
+		{"state", func(_ *Config, i *Item) { i.State = StateClosed },
+			ReasonStateNotAllowed, "It's closed. Allowed states: open."},
+		{"closed allowed", func(c *Config, i *Item) { i.State = StateClosed; c.States = []string{StateOpen, StateClosed} }, "", ""},
+		{"bot", func(_ *Config, i *Item) { i.IsBot = true; i.Author = "dependabot[bot]" },
+			ReasonBotAuthor, "dependabot[bot] is a bot account. Use --bots to include bot items."},
+		{"bot included", func(c *Config, i *Item) { i.IsBot = true; c.IncludeBots = true }, "", ""},
+		{"author denied", func(c *Config, _ *Item) { c.Authors = []string{"bob"} },
+			ReasonAuthorNotAllowed, "Alice isn't an allowed author."},
+		{"author ignores case", func(c *Config, _ *Item) { c.Authors = []string{"alice"} }, "", ""},
+		{"draft", func(_ *Config, i *Item) { i.Type = TypePullRequest; i.Draft = true },
+			ReasonDraft, "It's a draft pull request. Use --drafts to include drafts."},
+		{"draft included", func(c *Config, i *Item) { i.Type = TypePullRequest; i.Draft = true; c.IncludeDrafts = true }, "", ""},
+		{"draft flag ignored on issues", func(_ *Config, i *Item) { i.Draft = true }, "", ""},
+		{"required present", func(c *Config, _ *Item) { c.RequiredLabels = []string{"triaged", "accepted"} }, "", ""},
+		{"required missing", func(c *Config, _ *Item) { c.RequiredLabels = []string{"triaged", "ready"} },
+			ReasonMissingLabel, `It's missing the required label "ready".`},
+		{"excluded", func(c *Config, _ *Item) { c.ExcludedLabels = []string{"accepted"} },
+			ReasonExcludedLabel, `It has the excluded label "accepted".`},
 		{"excluded wins over required", func(c *Config, _ *Item) {
 			c.RequiredLabels = []string{"triaged"}
 			c.ExcludedLabels = []string{"triaged"}
-		}, false, "Item has an excluded label."},
+		}, ReasonExcludedLabel, `It has the excluded label "triaged".`},
+		{"state checked before bot", func(_ *Config, i *Item) { i.State = StateClosed; i.IsBot = true },
+			ReasonStateNotAllowed, "It's closed. Allowed states: open."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, it := base(), issue
 			tt.mod(&c, &it)
-			ok, reason := Evaluate(c, it)
-			if ok != tt.wantOK || reason != tt.reason {
-				t.Fatalf("got (%v, %q), want (%v, %q)", ok, reason, tt.wantOK, tt.reason)
+			d := Evaluate(c, it)
+			if d.OK != (tt.reason == "") || d.Reason != tt.reason || d.Message != tt.message {
+				t.Fatalf("got %+v, want reason %q message %q", d, tt.reason, tt.message)
 			}
 		})
 	}

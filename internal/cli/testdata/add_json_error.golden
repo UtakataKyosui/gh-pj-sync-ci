@@ -1,0 +1,4 @@
+$ exit 1
+--- stdout
+--- stderr
+{"message":"Couldn't find issue or pull request 404 in acme/web.","next":[{"command":"gh issue list --repo acme/web","argv":["gh","issue","list","--repo","acme/web"]},{"command":"gh pr list --repo acme/web","argv":["gh","pr","list","--repo","acme/web"]}],"reason":"not_found","status":"error"}

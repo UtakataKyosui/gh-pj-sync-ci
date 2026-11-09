@@ -1,0 +1,23 @@
+$ exit 1
+--- stdout
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          git remote
+
+✓ Added           2 items
+  acme/web#1      Item 1
+  acme/web#5      An extremely long title that will not fit on one line of an e…
+
+  Unchanged       1 item already in the project
+
+  Skipped         3 items
+  acme/web#3      It's a draft pull request. Use --drafts to include drafts.
+  acme/web#4      dependabot[bot] is a bot account. Use --bots to include bot i…
+  acme/web#6      It's missing the required label "triaged".
+
+✗ Checked 6 of 7 items. 1 failed.
+  acme/web#2      Failed to read issue or pull request 2 in acme/web. GitHub re…
+
+  See every result:
+    gh pj-synker add --all --owner acme --project 1 --label triaged --exclude-label blocked --dry-run --json

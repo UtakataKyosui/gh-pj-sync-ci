@@ -1,0 +1,28 @@
+$ exit 0
+--- stdout
+PVTI_I_acme_web_1
+PVTI_I_acme_web_5
+PVTI_existing
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          GITHUB_REPOSITORY
+  Finding project acme/1…
+  Listing items in acme/web…
+  Checking 7 items…
+  Adding 2 items…
+
+Added 2 items
+  acme/web#1      Item 1
+  acme/web#5      An extremely long title that will not fit on one line of an eighty column terminal
+
+  Unchanged       1 item already in the project
+
+  Skipped         4 items
+  acme/web#2      It has the excluded label "blocked".
+  acme/web#3      It's a draft pull request. Use --drafts to include drafts.
+  acme/web#4      dependabot[bot] is a bot account. Use --bots to include bot items.
+  acme/web#6      It's missing the required label "triaged".
+
+  View the project:
+    gh project view 1 --owner acme

@@ -1,0 +1,26 @@
+version: "2"
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [unparam, errorlint, errcheck]
+formatters:
+  enable:
+    - gofmt

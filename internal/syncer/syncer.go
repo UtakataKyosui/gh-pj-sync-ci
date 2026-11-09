@@ -1,127 +1,116 @@
-// Package syncer adds eligible issues and pull requests to a GitHub Project (v2), one way only.
+// Package syncer plans and applies one-way additions of issues and pull requests to a project.
+// Planning only reads; Apply is the only step that changes anything.
 package syncer
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/UtakataKyosui/gh-pj-synker/internal/filter"
+	"github.com/UtakataKyosui/gh-pj-synker/internal/ghapi"
 )
+
+// Outcome of one item.
+type Outcome string
 
 const (
-	ResultSynced  = "synced"
-	ResultSkipped = "skipped"
-	ResultDryRun  = "dry-run"
+	Pending   Outcome = "pending"   // eligible, not added yet (only between Plan and Apply)
+	Added     Outcome = "added"     // added by this run
+	Unchanged Outcome = "unchanged" // already in the project
+	Planned   Outcome = "planned"   // would be added (dry run)
+	Skipped   Outcome = "skipped"   // didn't pass the conditions
+	Failed    Outcome = "failed"    // an API call failed
 )
 
-// Item is a fetched issue or pull request.
-type Item struct {
-	filter.Item
-	Number    int
-	ContentID string // GraphQL node ID
-}
-
-// Project is the target Projects v2 board.
-type Project struct {
-	ID     string
-	Closed bool
-}
-
-// API abstracts the GitHub calls so the sync logic can be tested.
+// API is the subset of the GitHub client the syncer uses.
 type API interface {
-	GetItem(ctx context.Context, repo string, number int) (Item, error)
-	ListItemNumbers(ctx context.Context, repo string, states []string) ([]int, error)
-	GetProject(ctx context.Context, owner string, number int) (Project, error)
+	GetItem(ctx context.Context, repo string, number int) (ghapi.Item, error)
+	FindProjectItem(ctx context.Context, projectID, contentID string) (string, error)
 	AddItem(ctx context.Context, projectID, contentID string) (string, error)
 }
 
-// Options configures a sync run.
-type Options struct {
-	ProjectOwner  string
-	ProjectNumber int
-	Filter        filter.Config
-	DryRun        bool
-}
-
-// Result describes the outcome for one item.
+// Result is the state of one item.
 type Result struct {
-	Repo   string `json:"repo"`
-	Number int    `json:"number"`
-	Type   string `json:"type,omitempty"`
-	Result string `json:"result"`
-	ItemID string `json:"item_id"`
-	Reason string `json:"reason"`
+	Item          ghapi.Item
+	Outcome       Outcome
+	ProjectItemID string
+	Reason        string // skip reason code
+	Message       string // skip reason sentence
+	Err           error
+	Mutating      bool // Err came from the add request, so the item may have been added
 }
 
-// Syncer runs syncs against an API.
-type Syncer struct {
-	API  API
-	Opts Options
-
-	project *Project
+// Ref is an item reference.
+type Ref struct {
+	Repository string
+	Number     int
 }
 
-func (s *Syncer) loadProject(ctx context.Context) (Project, error) {
-	if s.project == nil {
-		p, err := s.API.GetProject(ctx, s.Opts.ProjectOwner, s.Opts.ProjectNumber)
-		if err != nil {
-			return Project{}, err
+// Plan fetches and checks every item, and finds the ones already in the project.
+// It never changes anything. It stops early when ctx is canceled.
+func Plan(ctx context.Context, api API, project ghapi.Project, cfg filter.Config, refs []Ref) []Result {
+	results := make([]Result, 0, len(refs))
+	for _, ref := range refs {
+		if ctx.Err() != nil {
+			break
 		}
-		s.project = &p
-	}
-	return *s.project, nil
-}
-
-// SyncOne checks a single item and adds it when it passes every condition.
-// Eligibility is judged on fresh API data, never on cached event payloads.
-func (s *Syncer) SyncOne(ctx context.Context, repo string, number int) (Result, error) {
-	res := Result{Repo: repo, Number: number}
-	item, err := s.API.GetItem(ctx, repo, number)
-	if err != nil {
-		return res, fmt.Errorf("%s#%d: %w", repo, number, err)
-	}
-	res.Type = item.Type
-	if ok, reason := filter.Evaluate(s.Opts.Filter, item.Item); !ok {
-		res.Result, res.Reason = ResultSkipped, reason
-		return res, nil
-	}
-	project, err := s.loadProject(ctx)
-	if err != nil {
-		return res, err
-	}
-	if project.Closed {
-		res.Result, res.Reason = ResultSkipped, "Target project is closed."
-		return res, nil
-	}
-	if s.Opts.DryRun {
-		res.Result, res.Reason = ResultDryRun, "Item passed all filters; no project changes were made."
-		return res, nil
-	}
-	id, err := s.API.AddItem(ctx, project.ID, item.ContentID)
-	if err != nil {
-		return res, fmt.Errorf("%s#%d: %w", repo, number, err)
-	}
-	if id == "" {
-		return res, fmt.Errorf("%s#%d: project API did not return an item ID", repo, number)
-	}
-	res.Result, res.ItemID, res.Reason = ResultSynced, id, "Item is present in the target project."
-	return res, nil
-}
-
-// SyncAll checks every item of a repository whose state is allowed by the filter.
-// Errors for individual items are recorded in errs; the run continues.
-func (s *Syncer) SyncAll(ctx context.Context, repo string) (results []Result, errs []error) {
-	numbers, err := s.API.ListItemNumbers(ctx, repo, s.Opts.Filter.States)
-	if err != nil {
-		return nil, []error{fmt.Errorf("%s: %w", repo, err)}
-	}
-	for _, n := range numbers {
-		r, err := s.SyncOne(ctx, repo, n)
+		r := Result{Item: ghapi.Item{Repository: ref.Repository, Number: ref.Number}}
+		item, err := api.GetItem(ctx, ref.Repository, ref.Number)
 		if err != nil {
-			errs = append(errs, err)
+			r.Outcome, r.Err = Failed, err
+			results = append(results, r)
 			continue
+		}
+		r.Item = item
+		if d := filter.Evaluate(cfg, item.Item); !d.OK {
+			r.Outcome, r.Reason, r.Message = Skipped, d.Reason, d.Message
+			results = append(results, r)
+			continue
+		}
+		existing, err := api.FindProjectItem(ctx, project.ID, item.ContentID)
+		switch {
+		case err != nil:
+			r.Outcome, r.Err = Failed, err
+		case existing != "":
+			r.Outcome, r.ProjectItemID = Unchanged, existing
+		default:
+			r.Outcome = Pending
 		}
 		results = append(results, r)
 	}
-	return results, errs
+	return results
+}
+
+// Apply adds every pending item, or marks it planned when dryRun is set.
+// Items left pending when ctx is canceled stay pending.
+func Apply(ctx context.Context, api API, project ghapi.Project, results []Result, dryRun bool) {
+	for i := range results {
+		r := &results[i]
+		if r.Outcome != Pending {
+			continue
+		}
+		if dryRun {
+			r.Outcome = Planned
+			continue
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		id, err := api.AddItem(ctx, project.ID, r.Item.ContentID)
+		if err != nil {
+			r.Outcome, r.Err, r.Mutating = Failed, err, true
+			continue
+		}
+		r.Outcome, r.ProjectItemID = Added, id
+	}
+}
+
+// Count returns the number of results with the outcome.
+func Count(results []Result, o Outcome) int {
+	n := 0
+	for _, r := range results {
+		if r.Outcome == o {
+			n++
+		}
+	}
+	return n
 }

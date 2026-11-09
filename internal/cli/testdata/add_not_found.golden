@@ -1,0 +1,14 @@
+$ exit 1
+--- stdout
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          git remote
+
+✗ Couldn't find issue or pull request 404 in acme/web.
+
+  List open issues:
+    gh issue list --repo acme/web
+
+  List open pull requests:
+    gh pr list --repo acme/web

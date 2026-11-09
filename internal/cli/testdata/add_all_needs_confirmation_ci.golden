@@ -1,0 +1,16 @@
+$ exit 2
+--- stdout
+--- stderr
+  Project         acme/1
+  Repository      acme/web
+  Source          GITHUB_REPOSITORY
+  Finding project acme/1…
+  Listing items in acme/web…
+  Checking 7 items…
+
+Error: Can't add 2 items found with --all without confirmation in non-interactive mode.
+  acme/web#1      Item 1
+  acme/web#5      An extremely long title that will not fit on one line of an…
+
+  Review the items, then confirm with --yes:
+    gh pj-synker add --all --owner acme --project 1 --label triaged --exclude-label blocked --yes

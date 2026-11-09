@@ -13,21 +13,12 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
-// redirect sends every request to the test server, keeping path and query.
-type redirect struct{ target *url.URL }
-
-func (r redirect) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.URL.Scheme, req.URL.Host = r.target.Scheme, r.target.Host
-	return http.DefaultTransport.RoundTrip(req)
-}
-
 func newClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
-	c, err := NewWithOptions(api.ClientOptions{Host: "github.com", AuthToken: "test", Transport: redirect{u}})
+	c, err := NewWithOptions(api.ClientOptions{Host: "github.com", AuthToken: "test", Transport: Redirect{Target: u}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +38,15 @@ func TestGetItemIssue(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "token test" {
 			t.Errorf("auth header %q", got)
 		}
-		w.Write([]byte(`{"number":3,"node_id":"I_3","state":"open","pull_request":null,
+		w.Write([]byte(`{"number":3,"node_id":"I_3","title":"Fix it","html_url":"https://github.com/o/r/issues/3","state":"open","pull_request":null,
 			"user":{"login":"Alice","type":"User"},"labels":[{"name":"Triaged"},{"name":"bug"}]}`))
 	})
 	it, err := c.GetItem(context.Background(), "o/r", 3)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if it.Title != "Fix it" || it.URL == "" || it.Repository != "o/r" {
+		t.Fatalf("%+v", it)
 	}
 	if it.Type != "issue" || it.ContentID != "I_3" || it.Author != "Alice" || it.IsBot || len(it.Labels) != 2 {
 		t.Fatalf("%+v", it)
@@ -75,7 +69,7 @@ func TestGetItemPullRequestUsesPullNodeAndDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if it.Type != "pull_request" || it.ContentID != "PR_7" || !it.Draft || !it.IsBot {
+	if it.Type != "pull-request" || it.ContentID != "PR_7" || !it.Draft || !it.IsBot {
 		t.Fatalf("%+v", it)
 	}
 }
@@ -152,10 +146,10 @@ func TestGetProject(t *testing.T) {
 		if v["owner"] != "my-org" || v["number"] != float64(4) {
 			t.Errorf("vars %v", v)
 		}
-		return `{"data":{"repositoryOwner":{"projectV2":{"id":"PVT_1","closed":true}}}}`
+		return `{"data":{"repositoryOwner":{"projectV2":{"id":"PVT_1","title":"Roadmap","closed":true}}}}`
 	}))
 	p, err := c.GetProject(context.Background(), "my-org", 4)
-	if err != nil || p.ID != "PVT_1" || !p.Closed {
+	if err != nil || p.ID != "PVT_1" || p.Title != "Roadmap" || !p.Closed {
 		t.Fatalf("%+v %v", p, err)
 	}
 }
@@ -164,8 +158,8 @@ func TestGetProjectMissing(t *testing.T) {
 	c := newClient(t, graphqlHandler(t, func(string, map[string]any) string {
 		return `{"data":{"repositoryOwner":{}}}`
 	}))
-	if _, err := c.GetProject(context.Background(), "x", 1); err == nil {
-		t.Fatal("expected error")
+	if _, err := c.GetProject(context.Background(), "x", 1); err != ErrProjectNotFound {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -189,5 +183,44 @@ func TestAddItem(t *testing.T) {
 	id, err := c.AddItem(context.Background(), "PVT_1", "I_3")
 	if err != nil || id != "PVTI_9" {
 		t.Fatalf("%q %v", id, err)
+	}
+}
+
+func TestFindProjectItem(t *testing.T) {
+	c := newClient(t, graphqlHandler(t, func(q string, v map[string]any) string {
+		if v["id"] != "I_3" || !strings.Contains(q, "includeArchived: true") {
+			t.Errorf("q=%s v=%v", q, v)
+		}
+		return `{"data":{"node":{"projectItems":{"nodes":[
+			{"id":"PVTI_other","project":{"id":"PVT_2"}},
+			{"id":"PVTI_mine","project":{"id":"PVT_1"}}]}}}}`
+	}))
+	id, err := c.FindProjectItem(context.Background(), "PVT_1", "I_3")
+	if err != nil || id != "PVTI_mine" {
+		t.Fatalf("%q %v", id, err)
+	}
+	id, err = c.FindProjectItem(context.Background(), "PVT_9", "I_3")
+	if err != nil || id != "" {
+		t.Fatalf("%q %v", id, err)
+	}
+}
+
+func TestAddItemWithoutIDFails(t *testing.T) {
+	c := newClient(t, graphqlHandler(t, func(string, map[string]any) string {
+		return `{"data":{"addProjectV2ItemById":{"item":null}}}`
+	}))
+	if _, err := c.AddItem(context.Background(), "P", "C"); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestNewRejectsNonLoopbackTestURL(t *testing.T) {
+	t.Setenv(TestAPIEnv, "https://evil.example.com")
+	if _, err := New(); err == nil {
+		t.Fatal("expected error")
+	}
+	t.Setenv(TestAPIEnv, "http://127.0.0.1:1")
+	if _, err := New(); err != nil {
+		t.Fatal(err)
 	}
 }

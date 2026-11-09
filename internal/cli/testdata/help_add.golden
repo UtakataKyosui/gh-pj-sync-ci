@@ -1,0 +1,49 @@
+$ exit 0
+--- stdout
+gh pj-synker add [<number>]... [options]
+Add eligible issues and pull requests to a project
+
+Arguments:
+  [<number>]...  Issue or pull request numbers, or use --all
+
+Options:
+  --all                     Check every item in the repositories
+  --author <LOGINS>         Only add items by these authors (default: any)
+  --bots                    Include items by bot accounts (default: false)
+  --drafts                  Include draft pull requests (default: false)
+  --dry-run                 Show what would be added, without adding
+  --exclude-label <LABELS>  Skip items that have any of these labels
+  --json                    Print the result as JSON on stdout
+  --label <LABELS>          Only add items that have all of these labels
+  --owner <LOGIN>           Project owner: user or organization (required)
+  --project <NUMBER>        Project number from its URL (required)
+  -R, --repo <REPOS>        OWNER/REPO list (default: current repository)
+  --state <STATES>          Item states: open, closed (default: open)
+  --type <TYPES>            Item types: issue, pull-request (default: both)
+  -y, --yes                 Confirm adding the items found with --all
+
+Global Options:
+  See `gh pj-synker --help`
+
+Examples:
+  Add an issue to a project
+    gh pj-synker add 42 --owner acme --project 1
+
+  Preview which triaged items would be added
+    gh pj-synker add --all --owner acme --project 1 --label triaged --dry-run
+
+  Add every eligible item in CI and read the result
+    gh pj-synker add --all --owner acme --project 1 --yes --json
+
+Notes:
+  Lists are comma-separated, such as --label triaged,accepted.
+  Matching ignores case. An excluded label wins over a required label.
+  Items are only added. Nothing is removed, archived, or written back.
+  Items already in the project are reported as unchanged, never duplicated.
+  The repository comes from --repo, GH_REPO, the current git checkout,
+  then GITHUB_REPOSITORY.
+  Authentication uses gh auth login, or GH_TOKEN in CI.
+  The token needs the project scope.
+
+Learn more: https://github.com/UtakataKyosui/gh-pj-synker#readme
+--- stderr

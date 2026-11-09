@@ -22,11 +22,16 @@ type Client struct {
 
 // New creates a client using the default gh authentication.
 func New() (*Client, error) {
-	rest, err := api.DefaultRESTClient()
+	return NewWithOptions(api.ClientOptions{})
+}
+
+// NewWithOptions creates a client with explicit options (used by tests).
+func NewWithOptions(opts api.ClientOptions) (*Client, error) {
+	rest, err := api.NewRESTClient(opts)
 	if err != nil {
 		return nil, err
 	}
-	gql, err := api.DefaultGraphQLClient()
+	gql, err := api.NewGraphQLClient(opts)
 	if err != nil {
 		return nil, err
 	}

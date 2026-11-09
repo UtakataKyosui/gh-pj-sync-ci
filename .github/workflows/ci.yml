@@ -25,7 +25,7 @@ jobs:
       # version the code targets and check the standard library that ships.
       - name: Use the toolchain from go.mod
         run: echo "GOTOOLCHAIN=$(go mod edit -json | jq -r .Toolchain)" >> "$GITHUB_ENV"
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
           install-mode: goinstall

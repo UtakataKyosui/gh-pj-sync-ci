@@ -267,3 +267,34 @@ func TestConfigFile(t *testing.T) {
 		t.Fatal("a request was made with a broken config file")
 	}
 }
+
+func TestConfigCheckWarnsAboutAutoAdd(t *testing.T) {
+	gh, srv := newFakeGitHub(t)
+	gh.setWorkflow("Auto-add to project", true)
+	gh.setWorkflow("Item closed", true)
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, ".pj-synker.yml")
+	if err := os.WriteFile(cfg, []byte("project:\n  owner: acme\n  number: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := command(srv.URL, "config", "check")
+	cmd.Dir = dir
+	r := runCmd(t, cmd)
+	if r.code != 0 || !strings.Contains(r.stderr, `Warning: Project acme/1 has "Auto-add to project" turned on.`) ||
+		strings.Contains(r.stdout, "Warning") {
+		t.Fatalf("%+v", r)
+	}
+
+	// Without credentials the check is skipped and the result is unchanged.
+	cmd = command("", "config", "check")
+	cmd.Dir = dir
+	r = runCmd(t, cmd)
+	if r.code != 0 || strings.Contains(r.stderr, "Warning") {
+		t.Fatalf("%+v", r)
+	}
+}

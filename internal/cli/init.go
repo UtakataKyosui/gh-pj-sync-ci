@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,7 +43,9 @@ var initCommand = command{
 	},
 	notes: []string{
 		"The file is written to .github/pj-synker.yml at the root of the git checkout,",
-		"or the current directory outside a checkout. Nothing is sent to GitHub.",
+		"or the current directory outside a checkout. Nothing is written to GitHub.",
+		"Unless --dry-run is given, it also reads the project's workflows and warns",
+		"about ones that add items on their own.",
 		"Prompts ask only for --owner and --project, and only on a terminal.",
 		"An existing config file is never replaced without --force.",
 	},
@@ -55,12 +58,14 @@ type initRun struct {
 	in     *bufio.Reader
 	asked  bool // a prompt was answered, so print the command to repeat it
 	cwd    string
+	ctx    context.Context
+	d      Deps
 	repo   string // current repository, for the default owner
 	pr     printer
 	stdout printer
 }
 
-func runInit(args []string, s Streams, d Deps) int {
+func runInit(ctx context.Context, args []string, s Streams, d Deps) int {
 	m := resolveMode(s, scanGlobals(args), wantsFlag(args, "json", ""))
 	p, err := parse(args, initCommand.allOptions(), initCommand.path())
 	if err != nil {
@@ -73,7 +78,7 @@ func runInit(args []string, s Streams, d Deps) int {
 	}
 	cwd, _ := d.Getwd()
 	repo, _ := d.CurrentRepo()
-	r := &initRun{s: s, m: m, p: p, in: bufio.NewReader(s.In), cwd: cwd, repo: repo,
+	r := &initRun{s: s, m: m, p: p, in: bufio.NewReader(s.In), cwd: cwd, repo: repo, ctx: ctx, d: d,
 		pr: printer{w: s.Err, st: m.Err, width: m.Width}, stdout: printer{w: s.Out, st: m.Out, width: m.Width}}
 	return r.run()
 }
@@ -121,7 +126,11 @@ func (r *initRun) run() int {
 				Message: fmt.Sprintf("Couldn't write %s.", display), Details: []detail{{"Error", sanitize(err.Error())}}})
 		}
 	}
-	return r.report(f, display, outcome, data)
+	var warn *overlapWarning
+	if outcome != "planned" {
+		warn = checkOverlappingWorkflows(r.ctx, r.d, f.Owner, f.Number)
+	}
+	return r.report(f, display, outcome, data, warn)
 }
 
 // settings reads the options. Values are validated now; missing ones are prompted for later.
@@ -420,7 +429,7 @@ func (r *initRun) argv(w withOptions) []string {
 	return a
 }
 
-func (r *initRun) report(f config.File, display, outcome string, data []byte) int {
+func (r *initRun) report(f config.File, display, outcome string, data []byte, warn *overlapWarning) int {
 	next := []Recovery{{Instruction: "Preview the items it would add", Argv: []string{"gh", "pj-synker", "add", "--all", "--dry-run"}}}
 	if r.m.JSON {
 		doc := map[string]any{
@@ -430,6 +439,9 @@ func (r *initRun) report(f config.File, display, outcome string, data []byte) in
 		}
 		if outcome == "planned" {
 			doc["content"] = string(data)
+		}
+		if w := warningsJSON(warn); w != nil {
+			doc["warnings"] = w
 		}
 		writeJSONDoc(r.s, doc)
 		return exitOK
@@ -458,6 +470,9 @@ func (r *initRun) report(f config.File, display, outcome string, data []byte) in
 	r.pr.command(joinArgv(next[0].Argv))
 	r.pr.blank()
 	r.pr.text("Commit the file so CI uses the same settings.")
+	if warn != nil {
+		printOverlapWarning(r.pr, warn)
+	}
 	// Scripts read the path from stdout.
 	if !r.s.OutTTY || !r.m.Interactive {
 		fmt.Fprintln(r.s.Out, display)

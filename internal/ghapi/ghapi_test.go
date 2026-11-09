@@ -173,6 +173,29 @@ func TestGetProjectGraphQLError(t *testing.T) {
 	}
 }
 
+func TestListWorkflows(t *testing.T) {
+	c := newClient(t, graphqlHandler(t, func(q string, v map[string]any) string {
+		if strings.Contains(q, "mutation") || v["owner"] != "my-org" || v["number"] != float64(4) {
+			t.Errorf("q=%s v=%v", q, v)
+		}
+		return `{"data":{"repositoryOwner":{"projectV2":{"workflows":{"nodes":[
+			{"name":"Auto-add to project","enabled":true},{"name":"Item closed","enabled":false}]}}}}}`
+	}))
+	got, err := c.ListWorkflows(context.Background(), "my-org", 4)
+	if err != nil || len(got) != 2 || got[0] != (Workflow{Name: "Auto-add to project", Enabled: true}) || got[1].Enabled {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+func TestListWorkflowsMissingProject(t *testing.T) {
+	c := newClient(t, graphqlHandler(t, func(string, map[string]any) string {
+		return `{"data":{"repositoryOwner":{}}}`
+	}))
+	if _, err := c.ListWorkflows(context.Background(), "x", 1); err != ErrProjectNotFound {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestAddItem(t *testing.T) {
 	c := newClient(t, graphqlHandler(t, func(q string, v map[string]any) string {
 		if !strings.Contains(q, "addProjectV2ItemById") || v["projectId"] != "PVT_1" || v["contentId"] != "I_3" {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -33,6 +34,8 @@ var configCheckCommand = command{
 		{"Check a specific file in CI", []string{"gh", "pj-synker", "config", "check", "--config", "ci/pj-synker.yml", "--json"}},
 	},
 	notes: []string{
+		"With project.owner and project.number set, it also reads the project's",
+		"workflows and warns about ones that add items on their own.",
 		"The file is read from --config, GH_PJ_SYNKER_CONFIG, or the first of these",
 		"found from the current directory up to the root of the git checkout:",
 		"  .github/pj-synker.yml or .yaml, then .pj-synker.yml or .yaml",
@@ -182,7 +185,7 @@ func codeFrame(src []byte, line, col int) []string {
 	return out
 }
 
-func runConfigCheck(args []string, s Streams, d Deps) int {
+func runConfigCheck(ctx context.Context, args []string, s Streams, d Deps) int {
 	m := resolveMode(s, scanGlobals(args), wantsFlag(args, "json", ""))
 	p, perr := parse(args, configCheckCommand.allOptions(), configCheckCommand.path())
 	if perr != nil {
@@ -211,6 +214,7 @@ func runConfigCheck(args []string, s Streams, d Deps) int {
 	}
 	f := lc.file
 	settings := effectiveSettings(f)
+	warn := checkOverlappingWorkflows(ctx, d, f.Owner, f.Number)
 	if m.JSON {
 		values := map[string]any{}
 		var defaulted []string
@@ -223,9 +227,13 @@ func runConfigCheck(args []string, s Streams, d Deps) int {
 		if defaulted == nil {
 			defaulted = []string{}
 		}
-		writeJSONDoc(s, map[string]any{"config": map[string]any{
+		doc := map[string]any{"config": map[string]any{
 			"path": lc.display, "version": f.Version, "settings": values, "defaults": defaulted,
-		}})
+		}}
+		if w := warningsJSON(warn); w != nil {
+			doc["warnings"] = w
+		}
+		writeJSONDoc(s, doc)
 		return exitOK
 	}
 	p2 := printer{w: s.Out, st: m.Out, width: m.Width}
@@ -236,6 +244,9 @@ func runConfigCheck(args []string, s Streams, d Deps) int {
 	if f.Owner == "" || f.Number == 0 {
 		p2.blank()
 		p2.text("Without project.owner and project.number, pass --owner and --project to add.")
+	}
+	if warn != nil {
+		printOverlapWarning(printer{w: s.Err, st: m.Err, width: m.Width}, warn)
 	}
 	return exitOK
 }

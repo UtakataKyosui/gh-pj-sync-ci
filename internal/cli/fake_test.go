@@ -19,17 +19,19 @@ import (
 
 // fakeAPI is an in-memory GitHub used by the CLI tests.
 type fakeAPI struct {
-	mu         sync.Mutex
-	project    ghapi.Project
-	projectErr error
-	items      map[string]map[int]ghapi.Item // repo -> number -> item
-	itemErr    map[int]error
-	inProject  map[string]string // content ID -> project item ID
-	addErr     error
-	onAdd      func() // runs inside AddItem before it fails or succeeds
-	listErr    error
-	added      []string
-	calls      []string
+	mu           sync.Mutex
+	project      ghapi.Project
+	projectErr   error
+	items        map[string]map[int]ghapi.Item // repo -> number -> item
+	itemErr      map[int]error
+	inProject    map[string]string // content ID -> project item ID
+	addErr       error
+	onAdd        func() // runs inside AddItem before it fails or succeeds
+	listErr      error
+	workflows    []ghapi.Workflow
+	workflowsErr error
+	added        []string
+	calls        []string
 }
 
 func newFake() *fakeAPI {
@@ -185,4 +187,11 @@ func tty() env {
 // ci is a non-interactive run with pipes, as in GitHub Actions.
 func ci() env {
 	return env{width: 0, vars: map[string]string{"CI": "true", "GITHUB_REPOSITORY": "acme/web"}}
+}
+
+func (f *fakeAPI) ListWorkflows(_ context.Context, _ string, _ int) ([]ghapi.Workflow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "ListWorkflows")
+	return f.workflows, f.workflowsErr
 }

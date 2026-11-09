@@ -193,7 +193,7 @@ func TestConfigCommandRouting(t *testing.T) {
 
 func TestConfigCheckJSON(t *testing.T) {
 	dir := repoDir(t, ".github/pj-synker.yml", validConfig)
-	r := run(t, nil, inDir(env{noAPI: true, vars: map[string]string{}}, dir), "config", "check", "--json")
+	r := run(t, nil, inDir(env{vars: map[string]string{}}, dir), "config", "check", "--json")
 	if r.code != 0 || r.stderr != "" {
 		t.Fatalf("%+v", r)
 	}
@@ -233,7 +233,7 @@ func TestConfigGoldens(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := repoDir(t, tt.file, tt.content)
 			e := inDir(noColorTTY(), dir)
-			e.noAPI = true
+			e.noAPI = tt.args[0] != "config"
 			golden(t, tt.name, slash(transcript(run(t, nil, e, tt.args...))))
 		})
 	}

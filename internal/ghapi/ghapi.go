@@ -38,6 +38,12 @@ type Project struct {
 	Closed bool
 }
 
+// Workflow is one of the built-in workflows of a project.
+type Workflow struct {
+	Name    string
+	Enabled bool
+}
+
 // ErrProjectNotFound means the owner has no such project, or the token can't see it.
 var ErrProjectNotFound = fmt.Errorf("project not found")
 
@@ -181,6 +187,40 @@ func (c *Client) GetProject(ctx context.Context, owner string, number int) (Proj
 	}
 	p := resp.RepositoryOwner.ProjectV2
 	return Project{ID: p.ID, Title: p.Title, URL: p.URL, Closed: p.Closed}, nil
+}
+
+// ListWorkflows returns the built-in workflows of a project (read only).
+func (c *Client) ListWorkflows(ctx context.Context, owner string, number int) ([]Workflow, error) {
+	type workflows struct {
+		Workflows struct {
+			Nodes []struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			} `json:"nodes"`
+		} `json:"workflows"`
+	}
+	var resp struct {
+		RepositoryOwner *struct {
+			ProjectV2 *workflows `json:"projectV2"`
+		} `json:"repositoryOwner"`
+	}
+	const query = `query($owner: String!, $number: Int!) {
+  repositoryOwner(login: $owner) {
+    ... on Organization { projectV2(number: $number) { workflows(first: 100) { nodes { name enabled } } } }
+    ... on User { projectV2(number: $number) { workflows(first: 100) { nodes { name enabled } } } }
+  }
+}`
+	if err := c.GraphQL.DoWithContext(ctx, query, map[string]any{"owner": owner, "number": number}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.RepositoryOwner == nil || resp.RepositoryOwner.ProjectV2 == nil {
+		return nil, ErrProjectNotFound
+	}
+	var out []Workflow
+	for _, n := range resp.RepositoryOwner.ProjectV2.Workflows.Nodes {
+		out = append(out, Workflow{Name: n.Name, Enabled: n.Enabled})
+	}
+	return out, nil
 }
 
 // FindProjectItem returns the ID of the content's item in the project, or "" when it isn't there.

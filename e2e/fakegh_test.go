@@ -27,18 +27,19 @@ type fakeIssue struct {
 // fakeGitHub is a small stateful GitHub: REST issues and pulls, and the GraphQL
 // project queries and mutation the CLI uses.
 type fakeGitHub struct {
-	t        *testing.T
-	mu       sync.Mutex
-	repo     string
-	issues   map[int]fakeIssue
-	project  int
-	closed   bool
-	items    map[string]string // content ID -> project item ID
-	adds     int
-	auth     []string
-	blockAll bool
-	started  chan struct{}
-	release  chan struct{}
+	t         *testing.T
+	mu        sync.Mutex
+	repo      string
+	issues    map[int]fakeIssue
+	project   int
+	closed    bool
+	workflows []map[string]any
+	items     map[string]string // content ID -> project item ID
+	adds      int
+	auth      []string
+	blockAll  bool
+	started   chan struct{}
+	release   chan struct{}
 }
 
 func newFakeGitHub(t *testing.T) (*fakeGitHub, *httptest.Server) {
@@ -67,6 +68,12 @@ func (f *fakeGitHub) setClosed(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closed = v
+}
+
+func (f *fakeGitHub) setWorkflow(name string, enabled bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.workflows = append(f.workflows, map[string]any{"name": name, "enabled": enabled})
 }
 
 func (f *fakeGitHub) setBlocking() {
@@ -176,6 +183,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.Unmarshal(body, &req)
 		switch {
+		case strings.Contains(req.Query, "workflows("):
+			nodes := append([]map[string]any{}, f.workflows...) // serve holds f.mu
+			writeJSON(w, 200, map[string]any{"data": map[string]any{"repositoryOwner": map[string]any{
+				"projectV2": map[string]any{"workflows": map[string]any{"nodes": nodes}}}}})
 		case strings.Contains(req.Query, "repositoryOwner"):
 			if int(req.Variables["number"].(float64)) != f.project {
 				writeJSON(w, 200, map[string]any{"data": map[string]any{"repositoryOwner": map[string]any{"projectV2": nil}}})

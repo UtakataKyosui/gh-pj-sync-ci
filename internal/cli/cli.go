@@ -16,6 +16,7 @@ type API interface {
 	syncer.API
 	GetProject(ctx context.Context, owner string, number int) (ghapi.Project, error)
 	ListItemNumbers(ctx context.Context, repo string, states []string) ([]int, error)
+	ListWorkflows(ctx context.Context, owner string, number int) ([]ghapi.Workflow, error)
 }
 
 // Deps are the side effects the CLI needs, injected so tests never touch the network.
@@ -61,9 +62,9 @@ func Run(ctx context.Context, args []string, s Streams, d Deps) int {
 	case "add":
 		return runAdd(ctx, rest, s, d)
 	case "init":
-		return runInit(rest, s, d)
+		return runInit(ctx, rest, s, d)
 	case "config check":
-		return runConfigCheck(rest, s, d)
+		return runConfigCheck(ctx, rest, s, d)
 	}
 	// A group without an action shows its help.
 	if _, err := parse(rest, globalOpts, c.path()); err != nil {

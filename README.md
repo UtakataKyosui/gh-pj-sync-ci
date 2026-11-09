@@ -175,16 +175,24 @@ CI（`CI`環境変数あり）では、自動的に非対話モードになり�
 
 ### GitHub ProjectsのWorkflowsとの併用
 
-Projectの設定にある組み込みのWorkflowsとは、役割が重なる部分があります。このツールはAPIで項目を追加するだけで、Workflowsの設定を読み書きしません。
+Projectの設定にある組み込みのWorkflowsとは、役割が重なる部分があります。このツールがWorkflowsの設定を変更することはありません。項目の追加はAPIで行い、Workflowsは`init`と`config check`が警告のために読むだけです。
 
 | Workflow | 併用時の挙動 |
 | --- | --- |
-| Auto-add to project | 追加条件が重なります。どちらが先に追加しても、もう一方は「すでにProjectにある」（`unchanged`）になるだけで、重複や失敗にはなりません。条件が違う場合、両方の和集合が追加されます。このツールの`filters`で絞っても、Workflow側の条件に合う項目は追加されます |
+| Auto-add to project／Auto-add sub-issues to project | 追加条件が重なります。どちらが先に追加しても、もう一方は「すでにProjectにある」（`unchanged`）になるだけで、重複や失敗にはなりません。条件が違う場合、両方の和集合が追加されます。このツールの`filters`で絞っても、Workflow側の条件に合う項目は追加されます |
 | Item added to project | 項目の追加を契機にStatusなどを設定するWorkflowは、このツールの追加でも動作する想定です。このツールはStatusを書かないため、値を取り合うことはありません。動作は自分のProjectで確認してください |
-| Auto-archive items | アーカイブされた項目が条件に合い続けていると、このツールの再実行で再び追加されうるため、追加とアーカイブが繰り返される可能性があります。`--state`、`--label`、`--exclude-label`をアーカイブ条件と逆の関係に揃えてください |
+| Auto-archive items | 警告の対象外です（確認した範囲のProjectでは、APIの一覧にこのWorkflowが現れませんでした）。アーカイブされた項目が条件に合い続けていると、このツールの再実行で再び追加されうるため、追加とアーカイブが繰り返される可能性があります。`--state`、`--label`、`--exclude-label`をアーカイブ条件と逆の関係に揃えてください |
 | Item closed／Pull request merged など | Statusを変えるWorkflowです。このツールはStatusを更新しないため、競合しません |
 
 追加条件はどちらか一方に寄せることを推奨します。このツールを使う場合は、Auto-add to projectを無効にしておくと、項目が入る理由を1か所で追えます。
+
+`gh pj-synker init`と`gh pj-synker config check`は、Projectの所有者と番号が分かると、有効な`Auto-add to project`と`Auto-add sub-issues to project`を読み取り、あればstderrに警告します。
+
+- **変更しません**: GitHub APIにはWorkflowsを無効にする操作がなく、削除しかできないため、設定は変えません。止める場合は、Projectの画面のWorkflowsから手動で無効にしてください。
+- **名前だけで判定します**: Workflowの条件は読めないため、警告は「このツールのフィルタに合わない項目も追加されうる」という目安です。
+- **読めなければ黙ってスキップします**: 認証がない、権限が足りない、Projectが見つからない、5秒以内に応答がない場合は、警告せずに従来どおりに終わります。終了コードにも影響しません。
+- **`init --dry-run`は読みません**: GitHubには何も送りません。
+- **`--json`**: 警告があるときだけ、`warnings`配列（`reason`は`overlapping_workflow`）を出力に加えます。
 
 ## 設計方針
 

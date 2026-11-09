@@ -39,7 +39,7 @@ gh pj-synker init --owner acme --project 1 --dry-run # 書かずに内容をstdo
 - **非対話時**: CIなどでは質問せず、足りないオプションを示して終了コード2で止まります。
 - **フィルタ**: `add`と同じオプション（`--label`、`--exclude-label`、`--repo`など）で指定します。指定しなかったフィルタは、コメントアウトした例として書き出します。
 - **上書きの防止**: 既存のファイルは`--force`なしでは置き換えません。別名の設定ファイル（例：`.pj-synker.yml`）がすでにある場合も止まります。2つあると探索が曖昧になるためです。
-- **書き込み**: 一時ファイルを経由してアトミックに書くので、途中で止まっても壊れたファイルは残りません。GitHubには何も送りません。
+- **書き込み**: 一時ファイルを経由してアトミックに書くので、途中で止まっても壊れたファイルは残りません。GitHubへの書き込みはしません。`--dry-run`以外では、Projectの[Workflows](../README.md#github-projectsのworkflowsとの併用)を読み取り、項目を自動で追加するものが有効なら警告します。
 - **保存先**: `--path <FILE>`で変えられます。
 
 ## 確認
@@ -49,6 +49,8 @@ gh pj-synker init --owner acme --project 1 --dry-run # 書かずに内容をstdo
 ```bash
 gh pj-synker config check
 ```
+
+`project.owner`と`project.number`があれば、`init`と同じ警告も出します。
 
 ## 探索順序
 

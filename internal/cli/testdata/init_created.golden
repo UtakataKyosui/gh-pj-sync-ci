@@ -1,0 +1,10 @@
+$ exit 0
+--- stdout
+--- stderr
+✓ Created         .github/pj-synker.yml
+  Project         acme/1
+
+  Preview the items it would add:
+    gh pj-synker add --all --dry-run
+
+  Commit the file so CI uses the same settings.

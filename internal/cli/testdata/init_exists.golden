@@ -1,0 +1,10 @@
+$ exit 1
+--- stdout
+--- stderr
+✗ Can't create .github/pj-synker.yml. The file already exists.
+
+  Check the existing file:
+    gh pj-synker config check
+
+  Or replace it:
+    gh pj-synker init --owner acme --project 1 --force

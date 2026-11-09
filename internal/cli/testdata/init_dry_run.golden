@@ -1,0 +1,17 @@
+$ exit 0
+--- stdout
+# gh pj-synker settings. Options given on the command line override them.
+# Check the file with: gh pj-synker config check
+# yaml-language-server: $schema=https://raw.githubusercontent.com/UtakataKyosui/gh-pj-synker/main/docs/pj-synker.schema.json
+version: 1
+
+project:
+  owner: acme
+  number: 1
+
+repositories: [acme/web]
+
+filters:
+  exclude-labels: [blocked]
+--- stderr
+  Dry run. .github/pj-synker.yml wasn't written.

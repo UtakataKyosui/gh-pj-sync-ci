@@ -60,6 +60,8 @@ func Run(ctx context.Context, args []string, s Streams, d Deps) int {
 	switch c.name {
 	case "add":
 		return runAdd(ctx, rest, s, d)
+	case "init":
+		return runInit(rest, s, d)
 	case "config check":
 		return runConfigCheck(rest, s, d)
 	}

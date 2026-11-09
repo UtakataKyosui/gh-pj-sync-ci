@@ -48,7 +48,7 @@ var rootCommand = command{
 	summary: "Add issues and pull requests to GitHub Projects",
 }
 
-func commands() []command { return []command{addCommand, configCommand, helpCommand} }
+func commands() []command { return []command{addCommand, initCommand, configCommand, helpCommand} }
 
 func (c command) children() []command {
 	if c.name == "" {

@@ -5,6 +5,7 @@ Add issues and pull requests to GitHub Projects
 
 Commands:
   add     Add eligible issues and pull requests to a project
+  init    Create a config file for the repository
   config  Inspect the config file
   help    Show help for a command
 

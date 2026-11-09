@@ -31,6 +31,7 @@ filters:
 ```
 
 ```bash
+gh pj-synker init           # 対話的に作成（--owner と --project を渡せばプロンプトなし）
 gh pj-synker config check   # 検証し、最終的に使われる値と既定値を表示する
 gh pj-synker add 42         # --owner と --project は設定ファイルから補われる
 ```

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ type fakeAPI struct {
 	itemErr    map[int]error
 	inProject  map[string]string // content ID -> project item ID
 	addErr     error
+	onAdd      func() // runs inside AddItem before it fails or succeeds
 	listErr    error
 	added      []string
 	calls      []string
@@ -104,6 +106,9 @@ func (f *fakeAPI) FindProjectItem(_ context.Context, _, content string) (string,
 }
 func (f *fakeAPI) AddItem(_ context.Context, _, content string) (string, error) {
 	f.call("AddItem")
+	if f.onAdd != nil {
+		f.onAdd()
+	}
 	if f.addErr != nil {
 		return "", f.addErr
 	}
@@ -118,6 +123,7 @@ type env struct {
 	outTTY bool
 	errTTY bool
 	stdin  string
+	in     io.Reader // overrides stdin
 	width  int
 	ctx    context.Context
 	noAPI  bool // fail the test if the API is created
@@ -134,8 +140,12 @@ func run(t *testing.T, f *fakeAPI, e env, args ...string) result {
 	t.Helper()
 	var out, errb bytes.Buffer
 	vars := e.vars
+	var in io.Reader = strings.NewReader(e.stdin)
+	if e.in != nil {
+		in = e.in
+	}
 	s := Streams{
-		In: strings.NewReader(e.stdin), Out: &out, Err: &errb,
+		In: in, Out: &out, Err: &errb,
 		InTTY: e.inTTY, OutTTY: e.outTTY, ErrTTY: e.errTTY, Width: e.width,
 		Getenv: func(k string) string { return vars[k] },
 	}

@@ -504,7 +504,20 @@ func (r *addRun) confirm(pending []syncer.Result) (int, bool) {
 		question = r.m.Err.paint(ansiGreen, "?") + " " + question
 	}
 	fmt.Fprint(r.s.Err, question)
-	answer, _ := bufio.NewReader(r.s.In).ReadString('\n')
+	// Read in the background so Ctrl+C ends the prompt without another line of input.
+	answers := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(r.s.In).ReadString('\n')
+		answers <- line
+	}()
+	var answer string
+	select {
+	case answer = <-answers:
+	case <-r.ctx.Done():
+		r.p.blank()
+		r.p.line("Canceled. Nothing was changed.")
+		return exitCanceled, false
+	}
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 		r.p.line("Canceled. Nothing was changed.")
 		return exitCanceled, false
@@ -515,10 +528,14 @@ func (r *addRun) confirm(pending []syncer.Result) (int, bool) {
 
 func (r *addRun) canceled(results []syncer.Result) int {
 	r.clearProgress()
-	var added []string
+	var added, unknown []string
 	for _, res := range results {
-		if res.Outcome == syncer.Added {
+		switch {
+		case res.Outcome == syncer.Added:
 			added = append(added, res.ProjectItemID)
+		case res.Outcome == syncer.Failed && res.Mutating:
+			// The request was sent; GitHub may have accepted it before the interrupt.
+			unknown = append(unknown, ref(res.Item))
 		}
 	}
 	if r.m.JSON {
@@ -527,12 +544,22 @@ func (r *addRun) canceled(results []syncer.Result) int {
 			added = []string{}
 		}
 		e.setData("addedProjectItemIds", added)
+		if unknown == nil {
+			unknown = []string{}
+		}
+		e.setData("unknownOutcome", unknown)
 		fmt.Fprintln(r.s.Err, e.renderJSON())
 		return exitCanceled
 	}
 	r.p.blank()
+	if len(unknown) > 0 {
+		r.p.line(fmt.Sprintf("Canceled while adding %s. It may or may not have been added.", strings.Join(unknown, ", ")))
+		r.p.line("Run the command again to check; adding is idempotent.")
+	}
 	if len(added) == 0 {
-		r.p.line("Canceled. Nothing was changed.")
+		if len(unknown) == 0 {
+			r.p.line("Canceled. Nothing was changed.")
+		}
 	} else {
 		r.p.line(fmt.Sprintf("Canceled after adding %s. The rest weren't added.", plural(len(added), "item", "items")))
 	}

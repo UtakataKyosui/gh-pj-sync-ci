@@ -198,3 +198,27 @@ func TestErrorMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDiscoverReportsUnreadableCandidates(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink that points at itself can't be stat'ed. It must not read as "no config".
+	if err := os.Symlink(".pj-synker.yml", filepath.Join(dir, ".pj-synker.yml")); err != nil {
+		t.Skipf("symlinks aren't available: %v", err)
+	}
+	if found, err := Discover(dir); err == nil || found != "" {
+		t.Fatalf("found %q, err %v", found, err)
+	}
+}
+
+func TestDiscoverIgnoresMissingCandidates(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := Discover(dir); err != nil || found != "" {
+		t.Fatalf("found %q, err %v", found, err)
+	}
+}
